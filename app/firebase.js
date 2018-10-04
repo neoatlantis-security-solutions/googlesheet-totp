@@ -4,7 +4,8 @@ PUBLISH:
     event:firebase.logout
     event:firebase.accesstoken
 
-SUBSCRIBE: Nothing
+SUBSCRIBE:
+    command:firebase.logout
 */
 
 var firebase = require('firebase'),
@@ -26,8 +27,6 @@ var options = {
     }
 };
 
-var inited = false;
-
 
 function onFirebaseAuthStateChanged(user){
     console.debug("auth state changed", user);
@@ -38,6 +37,7 @@ function onFirebaseAuthStateChanged(user){
     }
 }
 
+
 function onRedirectResult(result){
     if(!result.user) return false;
     console.debug("redirect result", result);
@@ -47,7 +47,11 @@ function onRedirectResult(result){
 }
 
 
+var inited = false;
 module.exports.init = function(){
+    /* Initialize firebase and associated event handlers, etc. Should be called
+    only once. */
+
     if(inited) return;
     firebase.initializeApp(CONFIG);
     
@@ -55,6 +59,19 @@ module.exports.init = function(){
     ui.start("#firebaseui-auth-container", options);
 
     firebase.auth().onAuthStateChanged(onFirebaseAuthStateChanged);
-    firebase.auth().getRedirectResult().then(onRedirectResult).catch(console.error);
+    firebase.auth().getRedirectResult()
+        .then(onRedirectResult)
+        .catch(module.exports.logout);
     inited = true;
+}
+
+
+module.exports.logout = function(){
+    return firebase.auth().signOut();
+}
+pubsub.subscribe("command:firebase.logout", module.exports.logout);
+
+
+module.exports.getUser = function(){
+    return firebase.auth().currentUser;
 }

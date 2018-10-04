@@ -14,8 +14,9 @@
   "dependencies": {
     "firebase": "^5.5.2",
     "firebaseui": "^3.4.1",
-    "gapi": "0.0.3",
     "jquery": "^3.3.1",
-    "pubsub-js": "^1.7.0"
+    "pubsub-js": "^1.7.0",
+    "tweetnacl": "^1.0.0",
+    "tweetnacl-util": "^0.15.0"
   }
 }

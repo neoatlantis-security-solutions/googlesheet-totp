@@ -1,4 +1,14 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+/*
+PUBLISH:
+    event:firebase.login
+    event:firebase.logout
+    event:firebase.accesstoken
+
+SUBSCRIBE:
+    command:firebase.logout
+*/
+
 var firebase = require('firebase'),
     firebaseui = require('firebaseui'),
     pubsub = require("./pubsub.js");
@@ -18,8 +28,6 @@ var options = {
     }
 };
 
-var inited = false;
-
 
 function onFirebaseAuthStateChanged(user){
     console.debug("auth state changed", user);
@@ -30,6 +38,7 @@ function onFirebaseAuthStateChanged(user){
     }
 }
 
+
 function onRedirectResult(result){
     if(!result.user) return false;
     console.debug("redirect result", result);
@@ -39,7 +48,11 @@ function onRedirectResult(result){
 }
 
 
+var inited = false;
 module.exports.init = function(){
+    /* Initialize firebase and associated event handlers, etc. Should be called
+    only once. */
+
     if(inited) return;
     firebase.initializeApp(CONFIG);
     
@@ -47,19 +60,56 @@ module.exports.init = function(){
     ui.start("#firebaseui-auth-container", options);
 
     firebase.auth().onAuthStateChanged(onFirebaseAuthStateChanged);
-    firebase.auth().getRedirectResult().then(onRedirectResult).catch(console.error);
+    firebase.auth().getRedirectResult()
+        .then(onRedirectResult)
+        .catch(module.exports.logout);
     inited = true;
 }
 
-},{"./pubsub.js":4,"firebase":20,"firebaseui":21}],2:[function(require,module,exports){
+
+module.exports.logout = function(){
+    return firebase.auth().signOut();
+}
+pubsub.subscribe("command:firebase.logout", module.exports.logout);
+
+
+module.exports.getUser = function(){
+    return firebase.auth().currentUser;
+}
+
+},{"./pubsub.js":4,"firebase":21,"firebaseui":22}],2:[function(require,module,exports){
+/*
+PUBLISH:
+    event:googlesheet.ready (sheetID)
+    event:googlesheet.unavailable
+
+SUBSCRIBE:
+    event:firebase.accesstoken
+*/
+
+var sheetID = null;
 var pubsub = require("./pubsub.js");
+
+function fetchSheetID(){
+    var search = /\/d\/([0-9a-zA-Z\-_]{30,})\/{0,1}/g.exec(
+        window.location.toString());
+    if(search && search.length > 1){
+        return search[1];
+    } else {
+        return null;
+    }
+}
 
 function initGoogleSheet(accessToken){
     console.debug("set access token to gapi.");
     gapi.client.setToken({ access_token: accessToken });
+    sheetID = fetchSheetID();
+    if(!sheetID){
+        pubsub.publish("event:googlesheet.unavailable");
+        return;
+    }
+    pubsub.publish("event:googlesheet.ready", sheetID);
 }
-
-
 
 function initGAPIClient(){
     gapi.client.init({
@@ -75,17 +125,27 @@ module.exports.init = function(){
     return gapi.load('client', initGAPIClient);
 }
 
+module.exports.values = function(method){
+    return function(opts){ 
+        opts.spreadsheetId = sheetID;
+        return gapi.client.sheets.spreadsheets.values[method](opts);
+    }
+    // should only be called after "event:googlesheet.ready" heard
+    // TODO catch internal errors
+}
+
 },{"./pubsub.js":4}],3:[function(require,module,exports){
 var $ = require("jquery");
 
 function main(){
     require("./googlesheet.js").init();
     require("./firebase.js").init();
+    require("./totp.js").init();
 }
 
 $(main);
 
-},{"./firebase.js":1,"./googlesheet.js":2,"jquery":22}],4:[function(require,module,exports){
+},{"./firebase.js":1,"./googlesheet.js":2,"./totp.js":5,"jquery":23}],4:[function(require,module,exports){
 var pubsubjs = require('pubsub-js');
 
 module.exports.subscribe = function(topic, callback, once){
@@ -99,7 +159,61 @@ module.exports.publish = function(topic, data){
     pubsubjs.publish(topic, data);
 }
 
-},{"pubsub-js":23}],5:[function(require,module,exports){
+},{"pubsub-js":24}],5:[function(require,module,exports){
+/*
+PUBLISH:
+    command:firebase.logout
+
+SUBSCRIBE:
+    event:googlesheet.ready (sheetID)
+*/
+
+var pubsub = require("./pubsub.js"),
+    sheet = require("./googlesheet.js"),
+    firebase = require("./firebase.js");
+
+module.exports.init = function(){
+    pubsub.subscribe("event:googlesheet.ready", startTOTP);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+var mainKey = null, sheetID = null;
+
+function startTOTP(_sheetID){
+    sheetID = _sheetID;
+    console.debug("Loading spreadsheet", sheetID);
+
+    loadData()
+        .then(readOrSetMainKey)
+    ;
+
+}
+
+
+function loadData(){
+    /* Try to load or initialize a user's main key. If main key exists, load
+    that, see if encrypted with user's uid, or prompt and wait for user's
+    PIN entry. If key cannot be encrypted due to invalid or nonexistent data,
+    prompt and wait for user's decision to reset. */
+
+    var user = firebase.getUser();
+    if(!user) throw Error("No such user.");
+
+    return sheet.values("get")({ range: "totp!A:B" })
+        .then(function(ret){ return ret.result; })
+    ;
+}
+
+function readOrSetMainKey(snapshot){
+    console.log(arguments);
+    var array = snapshot.values;
+    var A1 = array[0][0];
+
+    console.log(A1);
+}
+
+},{"./firebase.js":1,"./googlesheet.js":2,"./pubsub.js":4}],6:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -499,7 +613,7 @@ var firebase = createFirebaseNamespace();
 exports.firebase = firebase;
 exports.default = firebase;
 
-},{"@firebase/util":15}],6:[function(require,module,exports){
+},{"@firebase/util":16}],7:[function(require,module,exports){
 (function (global){
 (function() {var firebase = require('@firebase/app').default;var g,aa=aa||{},k=this;function l(a){return"string"==typeof a}function ba(a){return"boolean"==typeof a}function ca(){}
 function da(a){var b=typeof a;if("object"==b)if(a){if(a instanceof Array)return"array";if(a instanceof Object)return b;var c=Object.prototype.toString.call(a);if("[object Window]"==c)return"object";if("[object Array]"==c||"number"==typeof a.length&&"undefined"!=typeof a.splice&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("splice"))return"array";if("[object Function]"==c||"undefined"!=typeof a.call&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("call"))return"function"}else return"null";
@@ -818,7 +932,7 @@ Y(sg.prototype,{toJSON:{name:"toJSON",j:[V(null,!0)]}});Y(Hm.prototype,{clear:{n
 c){a=new Xl(a);c({INTERNAL:{getUid:r(a.getUid,a),getToken:r(a.bc,a),addAuthTokenListener:r(a.Ub,a),removeAuthTokenListener:r(a.Bc,a)}});return a},a,function(a,c){if("create"===a)try{c.auth()}catch(d){}});firebase.INTERNAL.extendNamespace({User:Q})}else throw Error("Cannot find the firebase namespace; be sure to include firebase-app.js before this library.");})();
 }).call(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : {});
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"@firebase/app":5}],7:[function(require,module,exports){
+},{"@firebase/app":6}],8:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -16174,7 +16288,7 @@ exports.DataSnapshot = DataSnapshot;
 exports.OnDisconnect = OnDisconnect;
 
 }).call(this,require('_process'))
-},{"@firebase/app":5,"@firebase/logger":10,"@firebase/util":15,"_process":25,"tslib":24}],8:[function(require,module,exports){
+},{"@firebase/app":6,"@firebase/logger":11,"@firebase/util":16,"_process":26,"tslib":25}],9:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -36346,7 +36460,7 @@ registerFirestore(firebase);
 exports.registerFirestore = registerFirestore;
 
 }).call(this,require('_process'))
-},{"@firebase/app":5,"@firebase/logger":10,"@firebase/webchannel-wrapper":16,"_process":25,"tslib":24}],9:[function(require,module,exports){
+},{"@firebase/app":6,"@firebase/logger":11,"@firebase/webchannel-wrapper":17,"_process":26,"tslib":25}],10:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -36898,7 +37012,7 @@ registerFunctions(firebase);
 
 exports.registerFunctions = registerFunctions;
 
-},{"@firebase/app":5,"tslib":24}],10:[function(require,module,exports){
+},{"@firebase/app":6,"tslib":25}],11:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -37086,7 +37200,7 @@ function setLogLevel(level) {
 exports.setLogLevel = setLogLevel;
 exports.Logger = Logger;
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -39213,7 +39327,7 @@ function isSWControllerSupported() {
 exports.registerMessaging = registerMessaging;
 exports.isSupported = isSupported;
 
-},{"@firebase/app":5,"@firebase/util":15,"tslib":24}],12:[function(require,module,exports){
+},{"@firebase/app":6,"@firebase/util":16,"tslib":25}],13:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -40748,7 +40862,7 @@ var iterator = _wksExt.f('iterator');
  */
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"whatwg-fetch":13}],13:[function(require,module,exports){
+},{"whatwg-fetch":14}],14:[function(require,module,exports){
 (function(self) {
   'use strict';
 
@@ -41216,7 +41330,7 @@ var iterator = _wksExt.f('iterator');
   self.fetch.polyfill = true
 })(typeof self !== 'undefined' ? self : this);
 
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -44677,7 +44791,7 @@ registerStorage(firebase);
 
 exports.registerStorage = registerStorage;
 
-},{"@firebase/app":5}],15:[function(require,module,exports){
+},{"@firebase/app":6}],16:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -46455,7 +46569,7 @@ exports.validateNamespace = validateNamespace;
 exports.stringLength = stringLength;
 exports.stringToByteArray = stringToByteArray$1;
 
-},{"tslib":24}],16:[function(require,module,exports){
+},{"tslib":25}],17:[function(require,module,exports){
 (function (global){
 (function() {'use strict';var e,goog=goog||{},h=this;function l(a){return"string"==typeof a}function m(a,b){a=a.split(".");b=b||h;for(var c=0;c<a.length;c++)if(b=b[a[c]],null==b)return null;return b}function aa(){}
 function ba(a){var b=typeof a;if("object"==b)if(a){if(a instanceof Array)return"array";if(a instanceof Object)return b;var c=Object.prototype.toString.call(a);if("[object Window]"==c)return"object";if("[object Array]"==c||"number"==typeof a.length&&"undefined"!=typeof a.splice&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("splice"))return"array";if("[object Function]"==c||"undefined"!=typeof a.call&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("call"))return"function"}else return"null";
@@ -46584,7 +46698,7 @@ e.F=function(){Y.L.F.call(this);h.clearTimeout(this.Jd);this.dc.clear();this.dc=
 V.prototype.getLastErrorCode=V.prototype.Xd;V.prototype.getStatus=V.prototype.za;V.prototype.getStatusText=V.prototype.ae;V.prototype.getResponseJson=V.prototype.Cf;V.prototype.getResponseText=V.prototype.ya;V.prototype.getResponseText=V.prototype.ya;V.prototype.send=V.prototype.send;module.exports={createWebChannelTransport:id,ErrorCode:ec,EventType:fc,WebChannel:hc,XhrIoPool:Z};}).call(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : {})
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 (function() {
 
   // nb. This is for IE10 and lower _only_.
@@ -47324,7 +47438,7 @@ V.prototype.getLastErrorCode=V.prototype.Xd;V.prototype.getStatus=V.prototype.za
   }
 })();
 
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 'use strict';
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
@@ -47350,7 +47464,7 @@ var firebase = _interopDefault(require('@firebase/app'));
 
 module.exports = firebase;
 
-},{"@firebase/app":5,"@firebase/polyfill":12}],19:[function(require,module,exports){
+},{"@firebase/app":6,"@firebase/polyfill":13}],20:[function(require,module,exports){
 'use strict';
 
 require('@firebase/auth');
@@ -47371,7 +47485,7 @@ require('@firebase/auth');
  * limitations under the License.
  */
 
-},{"@firebase/auth":6}],20:[function(require,module,exports){
+},{"@firebase/auth":7}],21:[function(require,module,exports){
 'use strict';
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
@@ -47500,7 +47614,7 @@ console.warn("\nIt looks like you're using the development build of the Firebase
 
 module.exports = firebase;
 
-},{"@firebase/app":5,"@firebase/auth":6,"@firebase/database":7,"@firebase/firestore":8,"@firebase/functions":9,"@firebase/messaging":11,"@firebase/polyfill":12,"@firebase/storage":14}],21:[function(require,module,exports){
+},{"@firebase/app":6,"@firebase/auth":7,"@firebase/database":8,"@firebase/firestore":9,"@firebase/functions":10,"@firebase/messaging":12,"@firebase/polyfill":13,"@firebase/storage":15}],22:[function(require,module,exports){
 (function (global){
 (function() { var firebase=require('firebase/app');require('firebase/auth');if(typeof firebase.default!=='undefined'){firebase=firebase.default;}/*
 
@@ -47871,7 +47985,7 @@ null,c||b.credential))}).then(function(){a.a&&(a.a.o(),a.a=null);throw b;})}retu
 um.prototype.reset);t("firebaseui.auth.AuthUI.prototype.delete",um.prototype.nb);t("firebaseui.auth.AuthUI.prototype.isPendingRedirect",um.prototype.ab);t("firebaseui.auth.AuthUIError",Dd);t("firebaseui.auth.AuthUIError.prototype.toJSON",Dd.prototype.toJSON);t("firebaseui.auth.CredentialHelper.ACCOUNT_CHOOSER_COM",ag);t("firebaseui.auth.CredentialHelper.GOOGLE_YOLO","googleyolo");t("firebaseui.auth.CredentialHelper.NONE","none");t("firebaseui.auth.AnonymousAuthProvider.PROVIDER_ID","anonymous")})(); if(typeof window!=='undefined'){window.dialogPolyfill=require('dialog-polyfill');}})();module.exports=firebaseui;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"dialog-polyfill":17,"firebase/app":18,"firebase/auth":19}],22:[function(require,module,exports){
+},{"dialog-polyfill":18,"firebase/app":19,"firebase/auth":20}],23:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.3.1
  * https://jquery.com/
@@ -58237,7 +58351,7 @@ if ( !noGlobal ) {
 return jQuery;
 } );
 
-},{}],23:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 /**
  * Copyright (c) 2010,2011,2012,2013,2014 Morgan Roderick http://roderick.dk
  * License: MIT - http://mrgnrdrck.mit-license.org
@@ -58538,7 +58652,7 @@ return jQuery;
     };
 }));
 
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 (function (global){
 /*! *****************************************************************************
 Copyright (c) Microsoft Corporation. All rights reserved.
@@ -58783,7 +58897,7 @@ var __importDefault;
 });
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],25:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
