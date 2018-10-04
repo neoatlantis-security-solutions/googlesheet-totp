@@ -1,0 +1,4 @@
+node_modules/
+*.sw?
+config.js
+package-lock.json
