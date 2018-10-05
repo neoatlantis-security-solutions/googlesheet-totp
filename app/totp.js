@@ -5,6 +5,7 @@ PUBLISH:
 
 SUBSCRIBE:
     event:googlesheet.ready (sheetID)
+    command:totp.decrypt (mainKey)
 */
 
 var pubsub = require("./pubsub.js"),
@@ -53,6 +54,7 @@ function readOrSetMainKey(snapshot){
         pubsub("command:totp.decrypt", array[0][0]);
         return snapshot;
     } else {
+        
     }
 
 }

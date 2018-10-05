@@ -77,7 +77,7 @@ module.exports.getUser = function(){
     return firebase.auth().currentUser;
 }
 
-},{"./pubsub.js":4,"firebase":21,"firebaseui":22}],2:[function(require,module,exports){
+},{"./pubsub.js":4,"firebase":23,"firebaseui":24}],2:[function(require,module,exports){
 /*
 PUBLISH:
     event:googlesheet.ready (sheetID)
@@ -141,11 +141,15 @@ function main(){
     require("./googlesheet.js").init();
     require("./firebase.js").init();
     require("./totp.js").init();
+
+    require("./ui.totp.table.js").init("#totp-table").fillItems({
+        "test": { provider: "Google", secret: "TEST1" },
+    });
 }
 
 $(main);
 
-},{"./firebase.js":1,"./googlesheet.js":2,"./totp.js":5,"jquery":23}],4:[function(require,module,exports){
+},{"./firebase.js":1,"./googlesheet.js":2,"./totp.js":5,"./ui.totp.table.js":6,"jquery":25}],4:[function(require,module,exports){
 var pubsubjs = require('pubsub-js');
 
 module.exports.subscribe = function(topic, callback, once){
@@ -159,13 +163,15 @@ module.exports.publish = function(topic, data){
     pubsubjs.publish(topic, data);
 }
 
-},{"pubsub-js":24}],5:[function(require,module,exports){
+},{"pubsub-js":27}],5:[function(require,module,exports){
 /*
 PUBLISH:
     command:firebase.logout
+    command:totp.decrypt (mainKey)
 
 SUBSCRIBE:
     event:googlesheet.ready (sheetID)
+    command:totp.decrypt (mainKey)
 */
 
 var pubsub = require("./pubsub.js"),
@@ -208,12 +214,89 @@ function loadData(){
 function readOrSetMainKey(snapshot){
     console.log(arguments);
     var array = snapshot.values;
-    var A1 = array[0][0];
+    var mainKeyExists = array && array[0][0];
 
-    console.log(A1);
+    if(mainKeyExists){
+        pubsub("command:totp.decrypt", array[0][0]);
+        return snapshot;
+    } else {
+        
+    }
+
 }
 
 },{"./firebase.js":1,"./googlesheet.js":2,"./pubsub.js":4}],6:[function(require,module,exports){
+var $ = require("jquery"),
+    OTP = require("tiny-otp");
+
+var target = null;
+
+function updateTOTPTable(target){
+    $(target).find('[data-totp-id]').each(function(){
+        var secret = $(this).attr('data-totp-secret');
+        if(secret){
+            $(this).data('secret', secret);
+            $(this).removeAttr('data-totp-secret');
+        } else {
+            secret = $(this).data('secret');
+        }
+        if(!secret) return;
+        $(this).find('[data-totp-code]').text((new OTP(secret)).getTOTP());
+    });
+}
+
+
+function initUI(){
+    $("<table>")
+        .append($("<thead>")
+            .append("<tr><th>Provider</th><th>Code</th></tr>")
+        )
+        .append($("<tbody>"))
+        .appendTo(target)
+    ;
+}
+
+
+function addItem(totpID, totpProvider, totpSecret){
+    $("<tr>")
+        .attr("data-totp-id", totpID)
+        .data("secret", totpSecret)
+        .append($("<td>").text(totpProvider))
+        .append($("<td>").attr("data-totp-code", true))
+        .appendTo($(target).find("table"))
+    ;
+}
+
+
+function clearItems(){
+    $(target).find("[data-totp-id]").remove();
+}
+
+
+module.exports.init = function(t){
+    if(target) return; // cannot init for second time
+    target = t;
+    initUI();
+    function updater(){
+        updateTOTPTable(target);
+        setTimeout(updater, 30000);
+    }
+    setTimeout(updater, 30000 - (new Date().getTime()) % 30000);
+    updater();
+    return module.exports;
+}
+
+
+module.exports.fillItems = function(items){
+    clearItems();
+    for(var id in items){
+        addItem(id, items[id].provider, items[id].secret);
+    }
+    updateTOTPTable();
+    return module.exports;
+}
+
+},{"jquery":25,"tiny-otp":28}],7:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -613,7 +696,7 @@ var firebase = createFirebaseNamespace();
 exports.firebase = firebase;
 exports.default = firebase;
 
-},{"@firebase/util":16}],7:[function(require,module,exports){
+},{"@firebase/util":17}],8:[function(require,module,exports){
 (function (global){
 (function() {var firebase = require('@firebase/app').default;var g,aa=aa||{},k=this;function l(a){return"string"==typeof a}function ba(a){return"boolean"==typeof a}function ca(){}
 function da(a){var b=typeof a;if("object"==b)if(a){if(a instanceof Array)return"array";if(a instanceof Object)return b;var c=Object.prototype.toString.call(a);if("[object Window]"==c)return"object";if("[object Array]"==c||"number"==typeof a.length&&"undefined"!=typeof a.splice&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("splice"))return"array";if("[object Function]"==c||"undefined"!=typeof a.call&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("call"))return"function"}else return"null";
@@ -932,7 +1015,7 @@ Y(sg.prototype,{toJSON:{name:"toJSON",j:[V(null,!0)]}});Y(Hm.prototype,{clear:{n
 c){a=new Xl(a);c({INTERNAL:{getUid:r(a.getUid,a),getToken:r(a.bc,a),addAuthTokenListener:r(a.Ub,a),removeAuthTokenListener:r(a.Bc,a)}});return a},a,function(a,c){if("create"===a)try{c.auth()}catch(d){}});firebase.INTERNAL.extendNamespace({User:Q})}else throw Error("Cannot find the firebase namespace; be sure to include firebase-app.js before this library.");})();
 }).call(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : {});
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"@firebase/app":6}],8:[function(require,module,exports){
+},{"@firebase/app":7}],9:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -16288,7 +16371,7 @@ exports.DataSnapshot = DataSnapshot;
 exports.OnDisconnect = OnDisconnect;
 
 }).call(this,require('_process'))
-},{"@firebase/app":6,"@firebase/logger":11,"@firebase/util":16,"_process":26,"tslib":25}],9:[function(require,module,exports){
+},{"@firebase/app":7,"@firebase/logger":12,"@firebase/util":17,"_process":30,"tslib":29}],10:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -36460,7 +36543,7 @@ registerFirestore(firebase);
 exports.registerFirestore = registerFirestore;
 
 }).call(this,require('_process'))
-},{"@firebase/app":6,"@firebase/logger":11,"@firebase/webchannel-wrapper":17,"_process":26,"tslib":25}],10:[function(require,module,exports){
+},{"@firebase/app":7,"@firebase/logger":12,"@firebase/webchannel-wrapper":18,"_process":30,"tslib":29}],11:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -37012,7 +37095,7 @@ registerFunctions(firebase);
 
 exports.registerFunctions = registerFunctions;
 
-},{"@firebase/app":6,"tslib":25}],11:[function(require,module,exports){
+},{"@firebase/app":7,"tslib":29}],12:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -37200,7 +37283,7 @@ function setLogLevel(level) {
 exports.setLogLevel = setLogLevel;
 exports.Logger = Logger;
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -39327,7 +39410,7 @@ function isSWControllerSupported() {
 exports.registerMessaging = registerMessaging;
 exports.isSupported = isSupported;
 
-},{"@firebase/app":6,"@firebase/util":16,"tslib":25}],13:[function(require,module,exports){
+},{"@firebase/app":7,"@firebase/util":17,"tslib":29}],14:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -40862,7 +40945,7 @@ var iterator = _wksExt.f('iterator');
  */
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"whatwg-fetch":14}],14:[function(require,module,exports){
+},{"whatwg-fetch":15}],15:[function(require,module,exports){
 (function(self) {
   'use strict';
 
@@ -41330,7 +41413,7 @@ var iterator = _wksExt.f('iterator');
   self.fetch.polyfill = true
 })(typeof self !== 'undefined' ? self : this);
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -44791,7 +44874,7 @@ registerStorage(firebase);
 
 exports.registerStorage = registerStorage;
 
-},{"@firebase/app":6}],16:[function(require,module,exports){
+},{"@firebase/app":7}],17:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -46569,7 +46652,7 @@ exports.validateNamespace = validateNamespace;
 exports.stringLength = stringLength;
 exports.stringToByteArray = stringToByteArray$1;
 
-},{"tslib":25}],17:[function(require,module,exports){
+},{"tslib":29}],18:[function(require,module,exports){
 (function (global){
 (function() {'use strict';var e,goog=goog||{},h=this;function l(a){return"string"==typeof a}function m(a,b){a=a.split(".");b=b||h;for(var c=0;c<a.length;c++)if(b=b[a[c]],null==b)return null;return b}function aa(){}
 function ba(a){var b=typeof a;if("object"==b)if(a){if(a instanceof Array)return"array";if(a instanceof Object)return b;var c=Object.prototype.toString.call(a);if("[object Window]"==c)return"object";if("[object Array]"==c||"number"==typeof a.length&&"undefined"!=typeof a.splice&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("splice"))return"array";if("[object Function]"==c||"undefined"!=typeof a.call&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("call"))return"function"}else return"null";
@@ -46698,7 +46781,321 @@ e.F=function(){Y.L.F.call(this);h.clearTimeout(this.Jd);this.dc.clear();this.dc=
 V.prototype.getLastErrorCode=V.prototype.Xd;V.prototype.getStatus=V.prototype.za;V.prototype.getStatusText=V.prototype.ae;V.prototype.getResponseJson=V.prototype.Cf;V.prototype.getResponseText=V.prototype.ya;V.prototype.getResponseText=V.prototype.ya;V.prototype.send=V.prototype.send;module.exports={createWebChannelTransport:id,ErrorCode:ec,EventType:fc,WebChannel:hc,XhrIoPool:Z};}).call(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : {})
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
+"use strict";
+
+/**
+ * Generate a character map.
+ * @param {string} alphabet e.g. "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+ * @param {object} mappings map overrides from key to value
+ * @method
+ */
+
+var charmap = function (alphabet, mappings) {
+  mappings || (mappings = {});
+  alphabet.split("").forEach(function (c, i) {
+    if (!(c in mappings)) mappings[c] = i;
+  });
+  return mappings;
+}
+
+/**
+ * The RFC 4648 base 32 alphabet and character map.
+ * @see {@link https://tools.ietf.org/html/rfc4648}
+ */
+
+var rfc4648 = {
+  alphabet: "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+  charmap: {
+    0: 14,
+    1: 8
+  }
+};
+
+rfc4648.charmap = charmap(rfc4648.alphabet, rfc4648.charmap);
+
+/**
+ * The Crockford base 32 alphabet and character map.
+ * @see {@link http://www.crockford.com/wrmg/base32.html}
+ */
+
+var crockford = {
+  alphabet: "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+  charmap: {
+    O: 0,
+    I: 1,
+    L: 1
+  }
+};
+
+crockford.charmap = charmap(crockford.alphabet, crockford.charmap);
+
+/**
+ * base32hex
+ * @see {@link https://en.wikipedia.org/wiki/Base32#base32hex}
+ */
+
+var base32hex = {
+  alphabet: "0123456789ABCDEFGHIJKLMNOPQRSTUV",
+  charmap: {}
+};
+
+base32hex.charmap = charmap(base32hex.alphabet, base32hex.charmap);
+
+/**
+ * Create a new `Decoder` with the given options.
+ *
+ * @param {object} [options]
+ *   @param {string} [type] Supported Base-32 variants are "rfc4648" and
+ *     "crockford".
+ *   @param {object} [charmap] Override the character map used in decoding.
+ * @constructor
+ */
+
+function Decoder (options) {
+  this.buf = [];
+  this.shift = 8;
+  this.carry = 0;
+
+  if (options) {
+
+    switch (options.type) {
+      case "rfc4648":
+        this.charmap = exports.rfc4648.charmap;
+        break;
+      case "crockford":
+        this.charmap = exports.crockford.charmap;
+        break;
+      case "base32hex":
+        this.charmap = exports.base32hex.charmap;
+        break;
+      default:
+        throw new Error("invalid type");
+    }
+
+    if (options.charmap) this.charmap = options.charmap;
+  }
+}
+
+/**
+ * The default character map coresponds to RFC4648.
+ */
+
+Decoder.prototype.charmap = rfc4648.charmap;
+
+/**
+ * Decode a string, continuing from the previous state.
+ *
+ * @param {string} str
+ * @return {Decoder} this
+ */
+
+Decoder.prototype.write = function (str) {
+  var charmap = this.charmap;
+  var buf = this.buf;
+  var shift = this.shift;
+  var carry = this.carry;
+
+  // decode string
+  str.toUpperCase().split("").forEach(function (char) {
+
+    // ignore padding
+    if (char == "=") return;
+
+    // lookup symbol
+    var symbol = charmap[char] & 0xff;
+
+    // 1: 00000 000
+    // 2:          00 00000 0
+    // 3:                    0000 0000
+    // 4:                             0 00000 00
+    // 5:                                       000 00000
+    // 6:                                                00000 000
+    // 7:                                                         00 00000 0
+
+    shift -= 5;
+    if (shift > 0) {
+      carry |= symbol << shift;
+    } else if (shift < 0) {
+      buf.push(carry | (symbol >> -shift));
+      shift += 8;
+      carry = (symbol << shift) & 0xff;
+    } else {
+      buf.push(carry | symbol);
+      shift = 8;
+      carry = 0;
+    }
+  });
+
+  // save state
+  this.shift = shift;
+  this.carry = carry;
+
+  // for chaining
+  return this;
+};
+
+/**
+ * Finish decoding.
+ *
+ * @param {string} [str] The final string to decode.
+ * @return {Array} Decoded byte array.
+ */
+
+Decoder.prototype.finalize = function (str) {
+  if (str) {
+    this.write(str);
+  }
+  if (this.shift !== 8 && this.carry !== 0) {
+    this.buf.push(this.carry);
+    this.shift = 8;
+    this.carry = 0;
+  }
+  return this.buf;
+};
+
+/**
+ * Create a new `Encoder` with the given options.
+ *
+ * @param {object} [options]
+ *   @param {string} [type] Supported Base-32 variants are "rfc4648" and
+ *     "crockford".
+ *   @param {object} [alphabet] Override the alphabet used in encoding.
+ * @constructor
+ */
+
+function Encoder (options) {
+  this.buf = "";
+  this.shift = 3;
+  this.carry = 0;
+
+  if (options) {
+
+    switch (options.type) {
+      case "rfc4648":
+        this.alphabet = exports.rfc4648.alphabet;
+        break;
+      case "crockford":
+        this.alphabet = exports.crockford.alphabet;
+        break;
+      case "base32hex":
+        this.alphabet = exports.base32hex.alphabet;
+        break;
+      default:
+        throw new Error("invalid type");
+    }
+
+    if (options.alphabet) this.alphabet = options.alphabet;
+    else if (options.lc) this.alphabet = this.alphabet.toLowerCase();
+  }
+}
+
+/**
+ * The default alphabet coresponds to RFC4648.
+ */
+
+Encoder.prototype.alphabet = rfc4648.alphabet;
+
+/**
+ * Encode a byte array, continuing from the previous state.
+ *
+ * @param {byte[]} buf The byte array to encode.
+ * @return {Encoder} this
+ */
+
+Encoder.prototype.write = function (buf) {
+  var shift = this.shift;
+  var carry = this.carry;
+  var symbol;
+  var byte;
+  var i;
+
+  // encode each byte in buf
+  for (i = 0; i < buf.length; i++) {
+    byte = buf[i];
+
+    // 1: 00000 000
+    // 2:          00 00000 0
+    // 3:                    0000 0000
+    // 4:                             0 00000 00
+    // 5:                                       000 00000
+    // 6:                                                00000 000
+    // 7:                                                         00 00000 0
+
+    symbol = carry | (byte >> shift);
+    this.buf += this.alphabet[symbol & 0x1f];
+
+    if (shift > 5) {
+      shift -= 5;
+      symbol = byte >> shift;
+      this.buf += this.alphabet[symbol & 0x1f];
+    }
+
+    shift = 5 - shift;
+    carry = byte << shift;
+    shift = 8 - shift;
+  }
+
+  // save state
+  this.shift = shift;
+  this.carry = carry;
+
+  // for chaining
+  return this;
+};
+
+/**
+ * Finish encoding.
+ *
+ * @param {byte[]} [buf] The final byte array to encode.
+ * @return {string} The encoded byte array.
+ */
+
+Encoder.prototype.finalize = function (buf) {
+  if (buf) {
+    this.write(buf);
+  }
+  if (this.shift !== 3) {
+    this.buf += this.alphabet[this.carry & 0x1f];
+    this.shift = 3;
+    this.carry = 0;
+  }
+  return this.buf;
+};
+
+/**
+ * Convenience encoder.
+ *
+ * @param {byte[]} buf The byte array to encode.
+ * @param {object} [options] Options to pass to the encoder.
+ * @return {string} The encoded string.
+ */
+
+exports.encode = function (buf, options) {
+  return new Encoder(options).finalize(buf);
+};
+
+/**
+ * Convenience decoder.
+ *
+ * @param {string} str The string to decode.
+ * @param {object} [options] Options to pass to the decoder.
+ * @return {byte[]} The decoded byte array.
+ */
+
+exports.decode = function (str, options) {
+  return new Decoder(options).finalize(str);
+};
+
+// Exports.
+exports.Decoder = Decoder;
+exports.Encoder = Encoder;
+exports.charmap = charmap;
+exports.crockford = crockford;
+exports.rfc4648 = rfc4648;
+exports.base32hex = base32hex;
+
+},{}],20:[function(require,module,exports){
 (function() {
 
   // nb. This is for IE10 and lower _only_.
@@ -47438,7 +47835,7 @@ V.prototype.getLastErrorCode=V.prototype.Xd;V.prototype.getStatus=V.prototype.za
   }
 })();
 
-},{}],19:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 'use strict';
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
@@ -47464,7 +47861,7 @@ var firebase = _interopDefault(require('@firebase/app'));
 
 module.exports = firebase;
 
-},{"@firebase/app":6,"@firebase/polyfill":13}],20:[function(require,module,exports){
+},{"@firebase/app":7,"@firebase/polyfill":14}],22:[function(require,module,exports){
 'use strict';
 
 require('@firebase/auth');
@@ -47485,7 +47882,7 @@ require('@firebase/auth');
  * limitations under the License.
  */
 
-},{"@firebase/auth":7}],21:[function(require,module,exports){
+},{"@firebase/auth":8}],23:[function(require,module,exports){
 'use strict';
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
@@ -47614,7 +48011,7 @@ console.warn("\nIt looks like you're using the development build of the Firebase
 
 module.exports = firebase;
 
-},{"@firebase/app":6,"@firebase/auth":7,"@firebase/database":8,"@firebase/firestore":9,"@firebase/functions":10,"@firebase/messaging":12,"@firebase/polyfill":13,"@firebase/storage":15}],22:[function(require,module,exports){
+},{"@firebase/app":7,"@firebase/auth":8,"@firebase/database":9,"@firebase/firestore":10,"@firebase/functions":11,"@firebase/messaging":13,"@firebase/polyfill":14,"@firebase/storage":16}],24:[function(require,module,exports){
 (function (global){
 (function() { var firebase=require('firebase/app');require('firebase/auth');if(typeof firebase.default!=='undefined'){firebase=firebase.default;}/*
 
@@ -47985,7 +48382,7 @@ null,c||b.credential))}).then(function(){a.a&&(a.a.o(),a.a=null);throw b;})}retu
 um.prototype.reset);t("firebaseui.auth.AuthUI.prototype.delete",um.prototype.nb);t("firebaseui.auth.AuthUI.prototype.isPendingRedirect",um.prototype.ab);t("firebaseui.auth.AuthUIError",Dd);t("firebaseui.auth.AuthUIError.prototype.toJSON",Dd.prototype.toJSON);t("firebaseui.auth.CredentialHelper.ACCOUNT_CHOOSER_COM",ag);t("firebaseui.auth.CredentialHelper.GOOGLE_YOLO","googleyolo");t("firebaseui.auth.CredentialHelper.NONE","none");t("firebaseui.auth.AnonymousAuthProvider.PROVIDER_ID","anonymous")})(); if(typeof window!=='undefined'){window.dialogPolyfill=require('dialog-polyfill');}})();module.exports=firebaseui;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"dialog-polyfill":18,"firebase/app":19,"firebase/auth":20}],23:[function(require,module,exports){
+},{"dialog-polyfill":20,"firebase/app":21,"firebase/auth":22}],25:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.3.1
  * https://jquery.com/
@@ -58351,7 +58748,34 @@ if ( !noGlobal ) {
 return jQuery;
 } );
 
-},{}],24:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
+/*
+ A JavaScript implementation of the SHA family of hashes, as
+ defined in FIPS PUB 180-4 and FIPS PUB 202, as well as the corresponding
+ HMAC implementation as defined in FIPS PUB 198a
+
+ Copyright Brian Turek 2008-2017
+ Distributed under the BSD License
+ See http://caligatio.github.com/jsSHA/ for more information
+
+ Several functions taken from Paul Johnston
+*/
+'use strict';(function(G){function r(d,b,c){var h=0,a=[],f=0,g,m,k,e,l,p,q,t,w=!1,n=[],u=[],v,r=!1;c=c||{};g=c.encoding||"UTF8";v=c.numRounds||1;if(v!==parseInt(v,10)||1>v)throw Error("numRounds must a integer >= 1");if("SHA-1"===d)l=512,p=z,q=H,e=160,t=function(a){return a.slice()};else throw Error("Chosen SHA variant is not supported");k=A(b,g);m=x(d);this.setHMACKey=function(a,f,b){var c;if(!0===w)throw Error("HMAC key already set");if(!0===r)throw Error("Cannot set HMAC key after calling update");
+g=(b||{}).encoding||"UTF8";f=A(f,g)(a);a=f.binLen;f=f.value;c=l>>>3;b=c/4-1;if(c<a/8){for(f=q(f,a,0,x(d),e);f.length<=b;)f.push(0);f[b]&=4294967040}else if(c>a/8){for(;f.length<=b;)f.push(0);f[b]&=4294967040}for(a=0;a<=b;a+=1)n[a]=f[a]^909522486,u[a]=f[a]^1549556828;m=p(n,m);h=l;w=!0};this.update=function(b){var e,g,c,d=0,q=l>>>5;e=k(b,a,f);b=e.binLen;g=e.value;e=b>>>5;for(c=0;c<e;c+=q)d+l<=b&&(m=p(g.slice(c,c+q),m),d+=l);h+=d;a=g.slice(d>>>5);f=b%l;r=!0};this.getHash=function(b,g){var c,k,l,p;if(!0===
+w)throw Error("Cannot call getHash after setting HMAC key");l=B(g);switch(b){case "HEX":c=function(a){return C(a,e,l)};break;case "B64":c=function(a){return D(a,e,l)};break;case "BYTES":c=function(a){return E(a,e)};break;case "ARRAYBUFFER":try{k=new ArrayBuffer(0)}catch(I){throw Error("ARRAYBUFFER not supported by this environment");}c=function(a){return F(a,e)};break;default:throw Error("format must be HEX, B64, BYTES, or ARRAYBUFFER");}p=q(a.slice(),f,h,t(m),e);for(k=1;k<v;k+=1)p=q(p,e,0,x(d),e);
+return c(p)};this.getHMAC=function(b,g){var c,k,n,r;if(!1===w)throw Error("Cannot call getHMAC without first setting HMAC key");n=B(g);switch(b){case "HEX":c=function(a){return C(a,e,n)};break;case "B64":c=function(a){return D(a,e,n)};break;case "BYTES":c=function(a){return E(a,e)};break;case "ARRAYBUFFER":try{c=new ArrayBuffer(0)}catch(I){throw Error("ARRAYBUFFER not supported by this environment");}c=function(a){return F(a,e)};break;default:throw Error("outputFormat must be HEX, B64, BYTES, or ARRAYBUFFER");
+}k=q(a.slice(),f,h,t(m),e);r=p(u,x(d));r=q(k,e,l,r,e);return c(r)}}function C(d,b,c){var h="";b/=8;var a,f;for(a=0;a<b;a+=1)f=d[a>>>2]>>>8*(3+a%4*-1),h+="0123456789abcdef".charAt(f>>>4&15)+"0123456789abcdef".charAt(f&15);return c.outputUpper?h.toUpperCase():h}function D(d,b,c){var h="",a=b/8,f,g,m;for(f=0;f<a;f+=3)for(g=f+1<a?d[f+1>>>2]:0,m=f+2<a?d[f+2>>>2]:0,m=(d[f>>>2]>>>8*(3+f%4*-1)&255)<<16|(g>>>8*(3+(f+1)%4*-1)&255)<<8|m>>>8*(3+(f+2)%4*-1)&255,g=0;4>g;g+=1)8*f+6*g<=b?h+="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(m>>>
+6*(3-g)&63):h+=c.b64Pad;return h}function E(d,b){var c="",h=b/8,a,f;for(a=0;a<h;a+=1)f=d[a>>>2]>>>8*(3+a%4*-1)&255,c+=String.fromCharCode(f);return c}function F(d,b){var c=b/8,h,a=new ArrayBuffer(c),f;f=new Uint8Array(a);for(h=0;h<c;h+=1)f[h]=d[h>>>2]>>>8*(3+h%4*-1)&255;return a}function B(d){var b={outputUpper:!1,b64Pad:"=",shakeLen:-1};d=d||{};b.outputUpper=d.outputUpper||!1;!0===d.hasOwnProperty("b64Pad")&&(b.b64Pad=d.b64Pad);if("boolean"!==typeof b.outputUpper)throw Error("Invalid outputUpper formatting option");
+if("string"!==typeof b.b64Pad)throw Error("Invalid b64Pad formatting option");return b}function A(d,b){var c;switch(b){case "UTF8":case "UTF16BE":case "UTF16LE":break;default:throw Error("encoding must be UTF8, UTF16BE, or UTF16LE");}switch(d){case "HEX":c=function(b,a,f){var g=b.length,c,d,e,l,p;if(0!==g%2)throw Error("String of HEX type must be in byte increments");a=a||[0];f=f||0;p=f>>>3;for(c=0;c<g;c+=2){d=parseInt(b.substr(c,2),16);if(isNaN(d))throw Error("String of HEX type contains invalid characters");
+l=(c>>>1)+p;for(e=l>>>2;a.length<=e;)a.push(0);a[e]|=d<<8*(3+l%4*-1)}return{value:a,binLen:4*g+f}};break;case "TEXT":c=function(c,a,f){var g,d,k=0,e,l,p,q,t,n;a=a||[0];f=f||0;p=f>>>3;if("UTF8"===b)for(n=3,e=0;e<c.length;e+=1)for(g=c.charCodeAt(e),d=[],128>g?d.push(g):2048>g?(d.push(192|g>>>6),d.push(128|g&63)):55296>g||57344<=g?d.push(224|g>>>12,128|g>>>6&63,128|g&63):(e+=1,g=65536+((g&1023)<<10|c.charCodeAt(e)&1023),d.push(240|g>>>18,128|g>>>12&63,128|g>>>6&63,128|g&63)),l=0;l<d.length;l+=1){t=k+
+p;for(q=t>>>2;a.length<=q;)a.push(0);a[q]|=d[l]<<8*(n+t%4*-1);k+=1}else if("UTF16BE"===b||"UTF16LE"===b)for(n=2,d="UTF16LE"===b&&!0||"UTF16LE"!==b&&!1,e=0;e<c.length;e+=1){g=c.charCodeAt(e);!0===d&&(l=g&255,g=l<<8|g>>>8);t=k+p;for(q=t>>>2;a.length<=q;)a.push(0);a[q]|=g<<8*(n+t%4*-1);k+=2}return{value:a,binLen:8*k+f}};break;case "B64":c=function(b,a,f){var c=0,d,k,e,l,p,q,n;if(-1===b.search(/^[a-zA-Z0-9=+\/]+$/))throw Error("Invalid character in base-64 string");k=b.indexOf("=");b=b.replace(/\=/g,
+"");if(-1!==k&&k<b.length)throw Error("Invalid '=' found in base-64 string");a=a||[0];f=f||0;q=f>>>3;for(k=0;k<b.length;k+=4){p=b.substr(k,4);for(e=l=0;e<p.length;e+=1)d="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".indexOf(p[e]),l|=d<<18-6*e;for(e=0;e<p.length-1;e+=1){n=c+q;for(d=n>>>2;a.length<=d;)a.push(0);a[d]|=(l>>>16-8*e&255)<<8*(3+n%4*-1);c+=1}}return{value:a,binLen:8*c+f}};break;case "BYTES":c=function(b,a,c){var d,m,k,e,l;a=a||[0];c=c||0;k=c>>>3;for(m=0;m<b.length;m+=
+1)d=b.charCodeAt(m),l=m+k,e=l>>>2,a.length<=e&&a.push(0),a[e]|=d<<8*(3+l%4*-1);return{value:a,binLen:8*b.length+c}};break;case "ARRAYBUFFER":try{c=new ArrayBuffer(0)}catch(h){throw Error("ARRAYBUFFER not supported by this environment");}c=function(b,a,c){var d,m,k,e,l;a=a||[0];c=c||0;m=c>>>3;l=new Uint8Array(b);for(d=0;d<b.byteLength;d+=1)e=d+m,k=e>>>2,a.length<=k&&a.push(0),a[k]|=l[d]<<8*(3+e%4*-1);return{value:a,binLen:8*b.byteLength+c}};break;default:throw Error("format must be HEX, TEXT, B64, BYTES, or ARRAYBUFFER");
+}return c}function n(d,b){return d<<b|d>>>32-b}function u(d,b){var c=(d&65535)+(b&65535);return((d>>>16)+(b>>>16)+(c>>>16)&65535)<<16|c&65535}function y(d,b,c,h,a){var f=(d&65535)+(b&65535)+(c&65535)+(h&65535)+(a&65535);return((d>>>16)+(b>>>16)+(c>>>16)+(h>>>16)+(a>>>16)+(f>>>16)&65535)<<16|f&65535}function x(d){var b=[];if("SHA-1"===d)b=[1732584193,4023233417,2562383102,271733878,3285377520];else throw Error("No SHA variants supported");return b}function z(d,b){var c=[],h,a,f,g,m,k,e;h=b[0];a=b[1];
+f=b[2];g=b[3];m=b[4];for(e=0;80>e;e+=1)c[e]=16>e?d[e]:n(c[e-3]^c[e-8]^c[e-14]^c[e-16],1),k=20>e?y(n(h,5),a&f^~a&g,m,1518500249,c[e]):40>e?y(n(h,5),a^f^g,m,1859775393,c[e]):60>e?y(n(h,5),a&f^a&g^f&g,m,2400959708,c[e]):y(n(h,5),a^f^g,m,3395469782,c[e]),m=g,g=f,f=n(a,30),a=h,h=k;b[0]=u(h,b[0]);b[1]=u(a,b[1]);b[2]=u(f,b[2]);b[3]=u(g,b[3]);b[4]=u(m,b[4]);return b}function H(d,b,c,h){var a;for(a=(b+65>>>9<<4)+15;d.length<=a;)d.push(0);d[b>>>5]|=128<<24-b%32;b+=c;d[a]=b&4294967295;d[a-1]=b/4294967296|0;
+b=d.length;for(a=0;a<b;a+=16)h=z(d.slice(a,a+16),h);return h}"function"===typeof define&&define.amd?define(function(){return r}):"undefined"!==typeof exports?("undefined"!==typeof module&&module.exports&&(module.exports=r),exports=r):G.jsSHA=r})(this);
+
+},{}],27:[function(require,module,exports){
 /**
  * Copyright (c) 2010,2011,2012,2013,2014 Morgan Roderick http://roderick.dk
  * License: MIT - http://mrgnrdrck.mit-license.org
@@ -58652,7 +59076,156 @@ return jQuery;
     };
 }));
 
-},{}],25:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
+const base32 = require('base32.js')
+const jsSHA = require('jssha/src/sha1')
+
+/**
+ * OTP manager class to generate RFC 4226 compliant HMAC-based one-time passwords (HOTPs),
+ * and RFC 6238 compliant time-based one-time passwords (TOTPs).
+ */
+class OTP {
+    /**
+     * Construct an instance of the OTP generator with a shared secret.
+     * @param {string} secret The shared secret used to generate and validate the OTP.
+     */
+    constructor (secret, encoding='utf8') {
+      if (encoding === 'base32') {
+        secret = base32.decode(secret);
+      }
+
+      this.secret = String(secret)
+    }
+
+    /**
+     * Calculate a time-based one-time password (TOTP), as defined in RFC-6238
+     * A TOTP is an HOTP that uses a time interval as the counter.
+     * @returns {string} A six-digit OTP value
+     */
+    getTOTP (digits = 6) {
+      // Get the current epoch, rounded to intervals of 30 seconds
+      const now = Math.floor((new Date()).getTime() / 1000)
+      const epoch = Math.floor(now / 30)
+
+      // Calcule an HOTP using the epoch as the counter
+      return this.getHOTP(String(epoch), digits)
+    }
+
+    /**
+     * Calculate a 6-digit HMAC-based one-time password (HOTP), as defined in RFC-4226
+     * @param {string} counter A distinct counter value used to generate an OTP with the secret.
+     * @returns {string} A six-digit OTP value
+     */
+    getHOTP (counter, digits = 6) {
+      // Calculate an HMAC encoded value from the secret and counter values
+      const encodedCounter = this.encodeCounter(counter)
+      const hmacDigest = this.getHmacDigest(this.secret, encodedCounter)
+
+      // Extract a dynamically truncated binary code from the HMAC result
+      const binaryCode = this.getBinaryCode(hmacDigest)
+
+      // Convert the binary code to a number between 0 and 1,000,000
+      const hotp = this.convertToHotp(binaryCode, digits)
+
+      return hotp
+    }
+
+    /**
+     * Generate an HMAC-SHA-1 for the secret and key
+     * @param {ArrayBuffer} secret The randomly generated shared secret.
+     * @param {ArrayBuffer} counter The counter value. In a TOTP this will be derived from the current time.
+     * @returns {Uint8Array} The HMAC hash result.
+     *
+     * Note - SHA-1 is now considered insecure for some uses, but is still considered secure for the purposes
+     * of OTP generation. It is the default hashing algorithm for HOTP (RFC4226) but TOTP (RFC6238), and is
+     * the also the only algorithm supported by Google Authenticator.
+     * See here for more info - https://github.com/google/google-authenticator-libpam/issues/11
+     */
+    getHmacDigest(secret, counter) {
+      // Initialize SHA-1-HMAC object with encoded secret as key
+      const shaObj = new jsSHA("SHA-1", "ARRAYBUFFER")
+      shaObj.setHMACKey(secret, "TEXT")
+
+      // Pass the current counter as a message to the HMAC object
+      shaObj.update(counter)
+
+      // Retreive and return the result of the the hash in an array
+      const hmacResult = new Uint8Array(shaObj.getHMAC("ARRAYBUFFER"))
+      return hmacResult
+    }
+
+    /**
+     * Extract the dynamic binary code from an HMAC-SHA-1 result.
+     * @param {Uint8Array} digest The digest should be a 20-byte Uint8Array
+     * @returns {number} A 31-bit binary code integer
+     */
+    getBinaryCode (digest) {
+      const offset  = digest[digest.length - 1] & 0xf
+      const binaryCode = (
+        ((digest[offset] & 0x7f) << 24) |
+        ((digest[offset + 1] & 0xff) << 16) |
+        ((digest[offset + 2] & 0xff) << 8) |
+        (digest[offset + 3] & 0xff))
+
+      return binaryCode
+    }
+
+    /**
+     * Convert a binary code to a 6 digit OTP value
+     * @param {number} number A 31-bit binary code
+     * @returns {number} An n-digit string of numbers
+     */
+    convertToHotp (number, digits = 6) {
+      // Convert binary code to an up-to 6 digit number
+      const otp = number % Math.pow(10, digits)
+
+      // If the resulting number has fewer than n digits, pad the front with zeros
+      return String(otp).padStart(digits, '0')
+    }
+
+    /** Static helper to generate random numbers */
+    static getRandomInt(min, max) {
+        return Math.floor(Math.random() * (max - min) + min)
+    }
+
+    /** Return base-32 encoded secret. */
+    getBase32Secret () {
+      const buf = this.toUint8Array(this.secret)
+      return base32.encode(buf).toString().replace(/=/g, '')
+    }
+
+    /** Convert string to Uint8 array (same as a nodejs Buffer)
+     * @param {string} str The string to be encoded
+     * @returns {Uint8Array} The resulting Uint8Array
+     */
+    toUint8Array(str) {
+      const buffer = new Uint8Array(str.length)
+      for (let i = 0; i < str.length; i++){
+          buffer[i] = (str.charCodeAt(i))
+      }
+      return buffer
+    }
+
+    /** Encode the counter values as an 8 byte array buffer. */
+    encodeCounter (counter) {
+      // Convert the counter value to an 8 byte bufer
+      // Adapted from https://github.com/speakeasyjs/speakeasy
+      const buf = new Uint8Array(8);
+      let tmp = counter;
+      for (let i = 0; i < 8; i++) {
+          // Mask 0xff over number to get last 8
+          buf[7 - i] = tmp & 0xff;
+
+          // Shift 8 and get ready to loop over the next batch of 8
+          tmp = tmp >> 8;
+      }
+
+      return buf
+    }
+}
+
+module.exports = OTP
+},{"base32.js":19,"jssha/src/sha1":26}],29:[function(require,module,exports){
 (function (global){
 /*! *****************************************************************************
 Copyright (c) Microsoft Corporation. All rights reserved.
@@ -58897,7 +59470,7 @@ var __importDefault;
 });
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],26:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
