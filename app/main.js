@@ -5,9 +5,7 @@ function main(){
     require("./firebase.js").init();
     require("./totp.js").init();
 
-    require("./ui.totp.table.js").init("#totp-table").fillItems({
-        "test": { provider: "Google", secret: "TEST1" },
-    });
+    require("./ui.totp.table.js").init("#totp-table");
 }
 
 $(main);

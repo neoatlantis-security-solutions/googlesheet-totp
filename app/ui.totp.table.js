@@ -1,19 +1,17 @@
 var $ = require("jquery"),
-    OTP = require("tiny-otp");
+    OTP = require("./otp.js"),
+    pubsub = require("./pubsub.js");
 
 var target = null;
+var secrets = {};
 
-function updateTOTPTable(target){
+function updateTOTPTable(){
     $(target).find('[data-totp-id]').each(function(){
-        var secret = $(this).attr('data-totp-secret');
-        if(secret){
-            $(this).data('secret', secret);
-            $(this).removeAttr('data-totp-secret');
-        } else {
-            secret = $(this).data('secret');
-        }
+        var tid = $(this).attr("data-totp-id");
+        var secret = secrets[tid];
         if(!secret) return;
-        $(this).find('[data-totp-code]').text((new OTP(secret)).getTOTP());
+        $(this).find('[data-totp-code]').text(
+            (new OTP(secret, "base32")).getTOTP());
     });
 }
 
@@ -30,9 +28,9 @@ function initUI(){
 
 
 function addItem(totpID, totpProvider, totpSecret){
+    secrets[totpID] = totpSecret;
     $("<tr>")
         .attr("data-totp-id", totpID)
-        .data("secret", totpSecret)
         .append($("<td>").text(totpProvider))
         .append($("<td>").attr("data-totp-code", true))
         .appendTo($(target).find("table"))
@@ -42,6 +40,7 @@ function addItem(totpID, totpProvider, totpSecret){
 
 function clearItems(){
     $(target).find("[data-totp-id]").remove();
+    secrets = {};
 }
 
 
@@ -50,7 +49,7 @@ module.exports.init = function(t){
     target = t;
     initUI();
     function updater(){
-        updateTOTPTable(target);
+        updateTOTPTable();
         setTimeout(updater, 30000);
     }
     setTimeout(updater, 30000 - (new Date().getTime()) % 30000);
@@ -67,3 +66,5 @@ module.exports.fillItems = function(items){
     updateTOTPTable();
     return module.exports;
 }
+
+pubsub.subscribe("command:ui.totp.table.fillitems", module.exports.fillItems);

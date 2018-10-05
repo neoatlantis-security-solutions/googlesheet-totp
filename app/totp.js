@@ -2,6 +2,7 @@
 PUBLISH:
     command:firebase.logout
     command:totp.decrypt (mainKey)
+    command:ui.totp.table.fillitems (items)
 
 SUBSCRIBE:
     event:googlesheet.ready (sheetID)
@@ -40,7 +41,22 @@ function loadData(){
     var user = firebase.getUser();
     if(!user) throw Error("No such user.");
 
-    return sheet.values("get")({ range: "totp!A:B" })
+    return sheet.values("get")({ range: "totp!A2:B" })
+    .then(function(ret){ return ret.result; })
+    .then(function(data){
+        var ret = {};
+        var values = data.values || [];
+        for(var i in values){
+            ret["item-" + i] = {
+                provider: values[i][0],
+                secret: values[i][1].trim(),
+            };
+        }
+        console.log(ret);
+        pubsub.publish("command:ui.totp.table.fillitems", ret);
+    });
+
+    return sheet.values("get")({ range: "totp!A2:B" })
         .then(function(ret){ return ret.result; })
     ;
 }
