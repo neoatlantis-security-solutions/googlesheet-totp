@@ -14,7 +14,7 @@ var pubsub = require("./pubsub.js"),
     firebase = require("./firebase.js");
 
 module.exports.init = function(){
-    pubsub.subscribe("event:googlesheet.ready", startTOTP);
+    //pubsub.subscribe("event:googlesheet.ready", startTOTP);
 }
 
 //////////////////////////////////////////////////////////////////////////////
