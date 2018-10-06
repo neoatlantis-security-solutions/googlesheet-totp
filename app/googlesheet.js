@@ -2,9 +2,12 @@
 PUBLISH:
     event:googlesheet.ready
     event:googlesheet.unavailable
+    event:googlesheet.refresh
 
 SUBSCRIBE:
     event:firebase.accesstoken
+    event:crypto.unlocked       // TODO
+    event:crypto.locked         // TODO
 */
 
 var sheetID = null;
@@ -31,7 +34,6 @@ function initGoogleSheet(accessToken){
         return;
     }
     module.exports.database = new Database(sheetID);
-    pubsub.publish("event:googlesheet.ready");
 }
 
 function initGAPIClient(){
@@ -44,6 +46,16 @@ function initGAPIClient(){
     });
 }
 
+
+function declareReadyWhenCryptoUnlocked(){
+    pubsub.publish("event:googlesheet.ready");
+    if(module.exports.database){
+        module.exports.database.refreshItems();
+    }
+}
+pubsub.subscribe("event:crypto.unlocked", declareReadyWhenCryptoUnlocked);
+
+
 module.exports.init = function(){
     return gapi.load('client', initGAPIClient);
 }
@@ -54,6 +66,7 @@ class Database {
     
     constructor(sheetID){
         this.__metadata = {};
+        this.__items = [];
         this.sheetID = sheetID;
         this.initialize();
     }
@@ -78,44 +91,46 @@ class Database {
                 self.__metadata = JSON.parse(values[0][0]);
                 console.debug("Retrieved current metadata", self.__metadata);
             })
-            .then(function(){
-                var encryptedMainKey = self.metadata("encrypted-main-key"),
-                    isDefaultMainKey = self.metadata("default-mainkey");
-                if(encryptedMainKey){
-                    console.debug("Found existing main key.");
-                    self.crypto = new Crypto(self.sheetID, encryptedMainKey);
-                    if(isDefaultMainKey){
-                        // we are indicated the main key can be decrypted with
-                        // default configuration - the uid from firebase
-                        console.debug("Trying to unlock the crypto engine.");
-                        var uid = firebase.getUser().uid;
-                        return self.crypto.unlock(uid);
-                    } else {
-                        // Let the crypto engine send a "cannot be unlocked"
-                        // signal, so that other services will ask for user
-                        // password.
-                        return self.crypto.unlock();
-                    }
-                    return; // done here
-                }
-                // if zero metadata, initialize with at least a main key
-                // and a "default" indicator
-                console.debug("Main key does not exist. Generate a new one.");
+            .then(function(){self.__initCrypto(self)})
+        ;
+    }
+
+    __initCrypto(self) {
+        var encryptedMainKey = self.metadata("encrypted-main-key"),
+            isDefaultMainKey = self.metadata("default-mainkey");
+        if(encryptedMainKey){
+            console.debug("Found existing main key.");
+            self.crypto = new Crypto(self.sheetID, encryptedMainKey);
+            if(isDefaultMainKey){
+                // we are indicated the main key can be decrypted with
+                // default configuration - the uid from firebase
+                console.debug("Trying to unlock the crypto engine.");
                 var uid = firebase.getUser().uid;
-                self.crypto = new Crypto(self.sheetID);
-                console.debug("New main key will be generated.");
-                return self.crypto.generate(uid)
-                    .then(function(encryptedMainKey){
-                        console.debug("Saving main key.");
-                        return self.metadata(
-                            "encrypted-main-key",
-                            encryptedMainKey
-                        );
-                    })
-                    .then(function(){
-                        return self.metadata("default-mainkey", true);
-                    })
-                ;
+                return self.crypto.unlock(uid);
+            } else {
+                // Let the crypto engine send a "cannot be unlocked"
+                // signal, so that other services will ask for user
+                // password.
+                return self.crypto.unlock();
+            }
+            return; // done here
+        }
+        // if zero metadata, initialize with at least a main key
+        // and a "default" indicator
+        console.debug("Main key does not exist. Generate a new one.");
+        var uid = firebase.getUser().uid;
+        self.crypto = new Crypto(self.sheetID);
+        console.debug("New main key will be generated.");
+        return self.crypto.generate(uid)
+            .then(function(encryptedMainKey){
+                console.debug("Saving main key.");
+                return self.metadata(
+                    "encrypted-main-key",
+                    encryptedMainKey
+                );
+            })
+            .then(function(){
+                return self.metadata("default-mainkey", true);
             })
         ;
     }
@@ -135,6 +150,30 @@ class Database {
                 ] }
             });
         }
+    }
+
+    refreshItems() {
+        var self = this;
+        this.values("get")({ range: "A2:C" })
+            .then(function(result){
+                var values = result.values || [[]];
+                self.__items = values;
+                pubsub.publish("event:googlesheet.refresh");
+            })
+        ;
+    }
+
+    listItems() {
+        var ret = [];
+        for(var i in this.__items){
+            var item = this.__items[i];
+            var decrypted = [];
+            for(var j in item){
+                decrypted[j] = this.crypto.decrypt(item[j]);
+            }
+            ret.append(decrypted);
+        }
+        return ret;
     }
 
 }
