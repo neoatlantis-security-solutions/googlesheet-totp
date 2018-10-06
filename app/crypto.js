@@ -1,8 +1,8 @@
 /*
 PUBLISH:
     event:crypto.kdf.progress (progress)
-    event:crypto.unlocked
-    event:crypto.locked
+    event:crypto.unlocked # crypto engine is ready for en-/decrypting anything
+    event:crypto.locked  # crypto engine not supplied with a valid Pwd
 
 */
 
@@ -110,6 +110,29 @@ class Crypto {
                 }
             })
         ;
+    }
+
+    lock() {
+        this.__plainMainKey = null;
+        pubsub.publish("event:crypto.locked");
+        console.debug("Crypto engine locked up.");
+    }
+
+    get unlocked(){
+        return Boolean(this.__plainMainKey);
+    }
+
+    encrypt(string) {
+        // encrypt any UTF8-plaintext into Base64-ciphertext
+        if(!this.__plainMainKey) throw Error("Crypto engine not locked.");
+        var data = nacl.util.decodeUTF8(string);
+        return encrypt(this.__plainMainKey, data);
+    }
+
+    decrypt(string) {
+        // decrypt any Base64-ciphertext to UTF8-plaintext
+        if(!this.__plainMainKey) throw Error("Crypto engine not locked.");
+        return nacl.util.encodeUTF8(decrypt(this.__plainMainKey, string));
     }
 
 }
