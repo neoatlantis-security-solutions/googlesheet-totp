@@ -60,6 +60,8 @@ function deriveKeyFromPassword(sheetID, password){
     // both inputs are ASCII strings
     var salt = nacl.util.decodeUTF8(sheetID),
         password = nacl.util.decodeUTF8(password);
+
+    pubsub.publish("event:crypto.kdf.progress", 0);
     return scrypt(password, salt, function(p){
         pubsub.publish("event:crypto.kdf.progress", p);
     });
@@ -144,7 +146,7 @@ class Crypto {
 
 module.exports = Crypto;
 
-},{"./pubsub.js":6,"scrypt-js":30,"tweetnacl":33,"tweetnacl-util":32}],2:[function(require,module,exports){
+},{"./pubsub.js":6,"scrypt-js":31,"tweetnacl":34,"tweetnacl-util":33}],2:[function(require,module,exports){
 /*
 PUBLISH:
     event:firebase.login
@@ -223,7 +225,7 @@ module.exports.getUser = function(){
     return firebase.auth().currentUser;
 }
 
-},{"./pubsub.js":6,"firebase":26,"firebaseui":27}],3:[function(require,module,exports){
+},{"./pubsub.js":6,"firebase":27,"firebaseui":28}],3:[function(require,module,exports){
 /*
 PUBLISH:
     event:googlesheet.unavailable
@@ -453,6 +455,7 @@ class Database {
 function main(){
     require("./ui.tabs.js");
     require("./ui.totp.table.js").init("#totp-table");
+    require("./ui.dialog.decrypt-in-progress.js");
 
     require("./googlesheet.js").init();
     require("./firebase.js").init();
@@ -462,7 +465,7 @@ function main(){
 
 $(main);
 
-},{"./firebase.js":2,"./googlesheet.js":3,"./totp.js":7,"./ui.tabs.js":8,"./ui.totp.table.js":9}],5:[function(require,module,exports){
+},{"./firebase.js":2,"./googlesheet.js":3,"./totp.js":7,"./ui.dialog.decrypt-in-progress.js":8,"./ui.tabs.js":9,"./ui.totp.table.js":10}],5:[function(require,module,exports){
 const base32 = require('base32.js')
 const sha1 = require('js-sha1')
 const naclutil = require("tweetnacl-util")
@@ -630,7 +633,7 @@ class OTP {
 
 module.exports = OTP
 
-},{"base32.js":22,"js-sha1":28,"tweetnacl-util":32}],6:[function(require,module,exports){
+},{"base32.js":23,"js-sha1":29,"tweetnacl-util":33}],6:[function(require,module,exports){
 var pubsubjs = require('pubsub-js');
 
 module.exports.subscribe = function(topic, callback, once){
@@ -648,7 +651,7 @@ module.exports.publish = function(topic, data){
     pubsubjs.publish(topic, data);
 }
 
-},{"pubsub-js":29}],7:[function(require,module,exports){
+},{"pubsub-js":30}],7:[function(require,module,exports){
 /*
 Keep tracks of a few TOTP codes internally, and manage the refresh jobs.
 The UI will call this class only, for listing all TOTP accounts, and actuell
@@ -716,6 +719,36 @@ function reloadTOTP(){
 },{"./googlesheet.js":3,"./otp.js":5,"./pubsub.js":6}],8:[function(require,module,exports){
 /*
 SUBSCRIBE:
+    event:crypto.kdf.progress (progress)
+*/
+
+var pubsub = require("./pubsub.js");
+
+var dialog = $("#decrypt-in-progress").dialog({
+    dialogClass: "no-close",
+    autoOpen: false,
+});
+
+dialog.find("div").progressbar({ value: 0, max: 100 });
+
+var oldValue = 0, value = 0;
+pubsub.subscribe("event:crypto.kdf.progress", function(progress){
+    value = progress * 100;
+    if(value - oldValue < 9) return;
+    if(value > 95){
+        dialog.dialog("open").find("div").progressbar({ value: 100 });
+        dialog.dialog("close");
+        oldValue = 0;
+        return;
+    } else {
+        dialog.dialog("open").find("div").progressbar({ value: value });
+        oldValue = value;
+    }
+});
+
+},{"./pubsub.js":6}],9:[function(require,module,exports){
+/*
+SUBSCRIBE:
     event:googlesheet.unavailable
 */
 
@@ -759,7 +792,7 @@ pubsub.subscribe("event:crypto.locked", function(){
     enableOnly("login");
 });
 
-},{"./pubsub.js":6}],9:[function(require,module,exports){
+},{"./pubsub.js":6}],10:[function(require,module,exports){
 /*
 SUBSCRIBE:
     event:totp.refreshed
@@ -813,7 +846,7 @@ module.exports.init = function(t){
     return module.exports;
 }
 
-},{"./pubsub.js":6,"./totp.js":7}],10:[function(require,module,exports){
+},{"./pubsub.js":6,"./totp.js":7}],11:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -1213,7 +1246,7 @@ var firebase = createFirebaseNamespace();
 exports.firebase = firebase;
 exports.default = firebase;
 
-},{"@firebase/util":20}],11:[function(require,module,exports){
+},{"@firebase/util":21}],12:[function(require,module,exports){
 (function (global){
 (function() {var firebase = require('@firebase/app').default;var g,aa=aa||{},k=this;function l(a){return"string"==typeof a}function ba(a){return"boolean"==typeof a}function ca(){}
 function da(a){var b=typeof a;if("object"==b)if(a){if(a instanceof Array)return"array";if(a instanceof Object)return b;var c=Object.prototype.toString.call(a);if("[object Window]"==c)return"object";if("[object Array]"==c||"number"==typeof a.length&&"undefined"!=typeof a.splice&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("splice"))return"array";if("[object Function]"==c||"undefined"!=typeof a.call&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("call"))return"function"}else return"null";
@@ -1532,7 +1565,7 @@ Y(sg.prototype,{toJSON:{name:"toJSON",j:[V(null,!0)]}});Y(Hm.prototype,{clear:{n
 c){a=new Xl(a);c({INTERNAL:{getUid:r(a.getUid,a),getToken:r(a.bc,a),addAuthTokenListener:r(a.Ub,a),removeAuthTokenListener:r(a.Bc,a)}});return a},a,function(a,c){if("create"===a)try{c.auth()}catch(d){}});firebase.INTERNAL.extendNamespace({User:Q})}else throw Error("Cannot find the firebase namespace; be sure to include firebase-app.js before this library.");})();
 }).call(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : {});
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"@firebase/app":10}],12:[function(require,module,exports){
+},{"@firebase/app":11}],13:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -16888,7 +16921,7 @@ exports.DataSnapshot = DataSnapshot;
 exports.OnDisconnect = OnDisconnect;
 
 }).call(this,require('_process'))
-},{"@firebase/app":10,"@firebase/logger":15,"@firebase/util":20,"_process":35,"tslib":31}],13:[function(require,module,exports){
+},{"@firebase/app":11,"@firebase/logger":16,"@firebase/util":21,"_process":36,"tslib":32}],14:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -37060,7 +37093,7 @@ registerFirestore(firebase);
 exports.registerFirestore = registerFirestore;
 
 }).call(this,require('_process'))
-},{"@firebase/app":10,"@firebase/logger":15,"@firebase/webchannel-wrapper":21,"_process":35,"tslib":31}],14:[function(require,module,exports){
+},{"@firebase/app":11,"@firebase/logger":16,"@firebase/webchannel-wrapper":22,"_process":36,"tslib":32}],15:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -37612,7 +37645,7 @@ registerFunctions(firebase);
 
 exports.registerFunctions = registerFunctions;
 
-},{"@firebase/app":10,"tslib":31}],15:[function(require,module,exports){
+},{"@firebase/app":11,"tslib":32}],16:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -37800,7 +37833,7 @@ function setLogLevel(level) {
 exports.setLogLevel = setLogLevel;
 exports.Logger = Logger;
 
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -39927,7 +39960,7 @@ function isSWControllerSupported() {
 exports.registerMessaging = registerMessaging;
 exports.isSupported = isSupported;
 
-},{"@firebase/app":10,"@firebase/util":20,"tslib":31}],17:[function(require,module,exports){
+},{"@firebase/app":11,"@firebase/util":21,"tslib":32}],18:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -41462,7 +41495,7 @@ var iterator = _wksExt.f('iterator');
  */
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"whatwg-fetch":18}],18:[function(require,module,exports){
+},{"whatwg-fetch":19}],19:[function(require,module,exports){
 (function(self) {
   'use strict';
 
@@ -41930,7 +41963,7 @@ var iterator = _wksExt.f('iterator');
   self.fetch.polyfill = true
 })(typeof self !== 'undefined' ? self : this);
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -45391,7 +45424,7 @@ registerStorage(firebase);
 
 exports.registerStorage = registerStorage;
 
-},{"@firebase/app":10}],20:[function(require,module,exports){
+},{"@firebase/app":11}],21:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -47169,7 +47202,7 @@ exports.validateNamespace = validateNamespace;
 exports.stringLength = stringLength;
 exports.stringToByteArray = stringToByteArray$1;
 
-},{"tslib":31}],21:[function(require,module,exports){
+},{"tslib":32}],22:[function(require,module,exports){
 (function (global){
 (function() {'use strict';var e,goog=goog||{},h=this;function l(a){return"string"==typeof a}function m(a,b){a=a.split(".");b=b||h;for(var c=0;c<a.length;c++)if(b=b[a[c]],null==b)return null;return b}function aa(){}
 function ba(a){var b=typeof a;if("object"==b)if(a){if(a instanceof Array)return"array";if(a instanceof Object)return b;var c=Object.prototype.toString.call(a);if("[object Window]"==c)return"object";if("[object Array]"==c||"number"==typeof a.length&&"undefined"!=typeof a.splice&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("splice"))return"array";if("[object Function]"==c||"undefined"!=typeof a.call&&"undefined"!=typeof a.propertyIsEnumerable&&!a.propertyIsEnumerable("call"))return"function"}else return"null";
@@ -47298,7 +47331,7 @@ e.F=function(){Y.L.F.call(this);h.clearTimeout(this.Jd);this.dc.clear();this.dc=
 V.prototype.getLastErrorCode=V.prototype.Xd;V.prototype.getStatus=V.prototype.za;V.prototype.getStatusText=V.prototype.ae;V.prototype.getResponseJson=V.prototype.Cf;V.prototype.getResponseText=V.prototype.ya;V.prototype.getResponseText=V.prototype.ya;V.prototype.send=V.prototype.send;module.exports={createWebChannelTransport:id,ErrorCode:ec,EventType:fc,WebChannel:hc,XhrIoPool:Z};}).call(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : {})
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],22:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 "use strict";
 
 /**
@@ -47612,7 +47645,7 @@ exports.crockford = crockford;
 exports.rfc4648 = rfc4648;
 exports.base32hex = base32hex;
 
-},{}],23:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 (function() {
 
   // nb. This is for IE10 and lower _only_.
@@ -48352,7 +48385,7 @@ exports.base32hex = base32hex;
   }
 })();
 
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 'use strict';
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
@@ -48378,7 +48411,7 @@ var firebase = _interopDefault(require('@firebase/app'));
 
 module.exports = firebase;
 
-},{"@firebase/app":10,"@firebase/polyfill":17}],25:[function(require,module,exports){
+},{"@firebase/app":11,"@firebase/polyfill":18}],26:[function(require,module,exports){
 'use strict';
 
 require('@firebase/auth');
@@ -48399,7 +48432,7 @@ require('@firebase/auth');
  * limitations under the License.
  */
 
-},{"@firebase/auth":11}],26:[function(require,module,exports){
+},{"@firebase/auth":12}],27:[function(require,module,exports){
 'use strict';
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
@@ -48528,7 +48561,7 @@ console.warn("\nIt looks like you're using the development build of the Firebase
 
 module.exports = firebase;
 
-},{"@firebase/app":10,"@firebase/auth":11,"@firebase/database":12,"@firebase/firestore":13,"@firebase/functions":14,"@firebase/messaging":16,"@firebase/polyfill":17,"@firebase/storage":19}],27:[function(require,module,exports){
+},{"@firebase/app":11,"@firebase/auth":12,"@firebase/database":13,"@firebase/firestore":14,"@firebase/functions":15,"@firebase/messaging":17,"@firebase/polyfill":18,"@firebase/storage":20}],28:[function(require,module,exports){
 (function (global){
 (function() { var firebase=require('firebase/app');require('firebase/auth');if(typeof firebase.default!=='undefined'){firebase=firebase.default;}/*
 
@@ -48899,7 +48932,7 @@ null,c||b.credential))}).then(function(){a.a&&(a.a.o(),a.a=null);throw b;})}retu
 um.prototype.reset);t("firebaseui.auth.AuthUI.prototype.delete",um.prototype.nb);t("firebaseui.auth.AuthUI.prototype.isPendingRedirect",um.prototype.ab);t("firebaseui.auth.AuthUIError",Dd);t("firebaseui.auth.AuthUIError.prototype.toJSON",Dd.prototype.toJSON);t("firebaseui.auth.CredentialHelper.ACCOUNT_CHOOSER_COM",ag);t("firebaseui.auth.CredentialHelper.GOOGLE_YOLO","googleyolo");t("firebaseui.auth.CredentialHelper.NONE","none");t("firebaseui.auth.AnonymousAuthProvider.PROVIDER_ID","anonymous")})(); if(typeof window!=='undefined'){window.dialogPolyfill=require('dialog-polyfill');}})();module.exports=firebaseui;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"dialog-polyfill":23,"firebase/app":24,"firebase/auth":25}],28:[function(require,module,exports){
+},{"dialog-polyfill":24,"firebase/app":25,"firebase/auth":26}],29:[function(require,module,exports){
 (function (process,global){
 /*
  * [js-sha1]{@link https://github.com/emn178/js-sha1}
@@ -49274,7 +49307,7 @@ um.prototype.reset);t("firebaseui.auth.AuthUI.prototype.delete",um.prototype.nb)
 })();
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":35}],29:[function(require,module,exports){
+},{"_process":36}],30:[function(require,module,exports){
 /**
  * Copyright (c) 2010,2011,2012,2013,2014 Morgan Roderick http://roderick.dk
  * License: MIT - http://mrgnrdrck.mit-license.org
@@ -49575,7 +49608,7 @@ um.prototype.reset);t("firebaseui.auth.AuthUI.prototype.delete",um.prototype.nb)
     };
 }));
 
-},{}],30:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 "use strict";
 
 (function(root) {
@@ -50031,7 +50064,7 @@ um.prototype.reset);t("firebaseui.auth.AuthUI.prototype.delete",um.prototype.nb)
 
 })(this);
 
-},{}],31:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 (function (global){
 /*! *****************************************************************************
 Copyright (c) Microsoft Corporation. All rights reserved.
@@ -50276,7 +50309,7 @@ var __importDefault;
 });
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],32:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 (function (Buffer){
 // Written in 2014-2016 by Dmitry Chestnykh and Devi Mandiri.
 // Public domain.
@@ -50361,7 +50394,7 @@ var __importDefault;
 }));
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":34}],33:[function(require,module,exports){
+},{"buffer":35}],34:[function(require,module,exports){
 (function(nacl) {
 'use strict';
 
@@ -52740,9 +52773,9 @@ nacl.setPRNG = function(fn) {
 
 })(typeof module !== 'undefined' && module.exports ? module.exports : (self.nacl = self.nacl || {}));
 
-},{"crypto":34}],34:[function(require,module,exports){
+},{"crypto":35}],35:[function(require,module,exports){
 
-},{}],35:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 

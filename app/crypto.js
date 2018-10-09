@@ -59,6 +59,8 @@ function deriveKeyFromPassword(sheetID, password){
     // both inputs are ASCII strings
     var salt = nacl.util.decodeUTF8(sheetID),
         password = nacl.util.decodeUTF8(password);
+
+    pubsub.publish("event:crypto.kdf.progress", 0);
     return scrypt(password, salt, function(p){
         pubsub.publish("event:crypto.kdf.progress", p);
     });
