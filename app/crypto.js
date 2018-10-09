@@ -124,15 +124,19 @@ class Crypto {
 
     encrypt(string) {
         // encrypt any UTF8-plaintext into Base64-ciphertext
-        if(!this.__plainMainKey) throw Error("Crypto engine not locked.");
+        if(!this.__plainMainKey) throw Error("Crypto engine not unlocked.");
         var data = nacl.util.decodeUTF8(string);
         return encrypt(this.__plainMainKey, data);
     }
 
     decrypt(string) {
         // decrypt any Base64-ciphertext to UTF8-plaintext
-        if(!this.__plainMainKey) throw Error("Crypto engine not locked.");
-        return nacl.util.encodeUTF8(decrypt(this.__plainMainKey, string));
+        if(!this.__plainMainKey) throw Error("Crypto engine not unlocked.");
+        try{
+            return nacl.util.encodeUTF8(decrypt(this.__plainMainKey, string));
+        } catch(e){
+            return null;
+        }
     }
 
 }

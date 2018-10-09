@@ -4,7 +4,11 @@ module.exports.subscribe = function(topic, callback, once){
     function wrappedCallback(msg, data){
         callback(data);
     }
-    pubsubjs.subscribe(topic, wrappedCallback, once);
+    if(Boolean(once)){
+        pubsubjs.subscribeOnce(topic, wrappedCallback);
+    } else {
+        pubsubjs.subscribe(topic, wrappedCallback);
+    }
 }
 
 module.exports.publish = function(topic, data){

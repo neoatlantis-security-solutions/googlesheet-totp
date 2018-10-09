@@ -1,50 +1,69 @@
 /*
+Keep tracks of a few TOTP codes internally, and manage the refresh jobs.
+The UI will call this class only, for listing all TOTP accounts, and actuell
+codes.
+
 PUBLISH:
     command:firebase.logout
     command:totp.decrypt (mainKey)
     command:ui.totp.table.fillitems (items)
 
 SUBSCRIBE:
-    event:googlesheet.ready (sheetID)
+    event:googlesheet.refresh
     command:totp.decrypt (mainKey)
 */
 
 var pubsub = require("./pubsub.js"),
     sheet = require("./googlesheet.js"),
+    OTP = require("./otp.js"),
     firebase = require("./firebase.js");
 
+var register = {}; // holds where(row + col) access a TOTP entry
+
 module.exports.init = function(){
-    pubsub.subscribe("event:googlesheet.ready", startTOTP);
+    pubsub.subscribe("event:googlesheet.refreshed", reloadTOTP);
 }
+
+
+/*
+// test code 
+pubsub.subscribe("event:googlesheet.refreshed", function(){
+    sheet.database.newRow(["Google", "testtesttest"]);
+}, "once");*/
 
 //////////////////////////////////////////////////////////////////////////////
 
-function startTOTP(){
-    console.debug("TOTP refresh engine started.");
-    
-    loadData();
+function generateTOTPAccessor(itemAccessor, row, col){
+    return function(){
+        var secret = itemAccessor(row, col);
+        if(!secret) return null;
+        try{
+            return (new OTP(secret, "base32")).getTOTP();
+        } catch(e){
+            console.error(e);
+            return null;
+        }
+    }
 }
 
-
-function loadData(){
-
-
-    return sheet.values("get")({ range: "totp!A2:B" })
-    .then(function(ret){ return ret.result; })
-    .then(function(data){
-        var ret = {};
-        var values = data.values || [];
-        for(var i in values){
-            ret["item-" + i] = {
-                provider: values[i][0],
-                secret: values[i][1].trim(),
-            };
+function reloadTOTP(){
+    console.debug("TOTP reloaded.");
+    var count = sheet.database.count;
+    var itemID, itemRow, itemCol=1, itemName, itemGenerator;
+    register = {};
+    for(var itemRow=0; itemRow<count; itemRow++){
+        itemID = "totp-" + itemRow;
+        itemName = sheet.database.item(itemRow, 0);
+        if(!itemName) itemName = "Unknown";
+        register[itemID] = {
+            name: itemName,
+            getTOTP: generateTOTPAccessor(
+                sheet.database.item,
+                itemRow,
+                itemCol
+            ),
         }
-        console.log(ret);
-        pubsub.publish("command:ui.totp.table.fillitems", ret);
-    });
-
-    return sheet.values("get")({ range: "totp!A2:B" })
-        .then(function(ret){ return ret.result; })
-    ;
+    }
+    // call for update
+    console.debug(register);
 }

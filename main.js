@@ -125,15 +125,19 @@ class Crypto {
 
     encrypt(string) {
         // encrypt any UTF8-plaintext into Base64-ciphertext
-        if(!this.__plainMainKey) throw Error("Crypto engine not locked.");
+        if(!this.__plainMainKey) throw Error("Crypto engine not unlocked.");
         var data = nacl.util.decodeUTF8(string);
         return encrypt(this.__plainMainKey, data);
     }
 
     decrypt(string) {
         // decrypt any Base64-ciphertext to UTF8-plaintext
-        if(!this.__plainMainKey) throw Error("Crypto engine not locked.");
-        return nacl.util.encodeUTF8(decrypt(this.__plainMainKey, string));
+        if(!this.__plainMainKey) throw Error("Crypto engine not unlocked.");
+        try{
+            return nacl.util.encodeUTF8(decrypt(this.__plainMainKey, string));
+        } catch(e){
+            return null;
+        }
     }
 
 }
@@ -222,11 +226,13 @@ module.exports.getUser = function(){
 },{"./pubsub.js":6,"firebase":25,"firebaseui":26}],3:[function(require,module,exports){
 /*
 PUBLISH:
-    event:googlesheet.ready
     event:googlesheet.unavailable
+    event:googlesheet.refreshed
 
 SUBSCRIBE:
     event:firebase.accesstoken
+    event:crypto.unlocked       // TODO
+    event:crypto.locked         // TODO
 */
 
 var sheetID = null;
@@ -253,7 +259,6 @@ function initGoogleSheet(accessToken){
         return;
     }
     module.exports.database = new Database(sheetID);
-    pubsub.publish("event:googlesheet.ready");
 }
 
 function initGAPIClient(){
@@ -266,6 +271,15 @@ function initGAPIClient(){
     });
 }
 
+
+function declareReadyWhenCryptoUnlocked(){
+    if(module.exports.database){
+        module.exports.database.__sync();
+    }
+}
+pubsub.subscribe("event:crypto.unlocked", declareReadyWhenCryptoUnlocked);
+
+
 module.exports.init = function(){
     return gapi.load('client', initGAPIClient);
 }
@@ -276,6 +290,10 @@ class Database {
     
     constructor(sheetID){
         this.__metadata = {};
+        this.__items = [];
+        this.__synced = false;
+        this.__needUpload = false;
+        this.__needAppends = [];
         this.sheetID = sheetID;
         this.initialize();
     }
@@ -343,7 +361,6 @@ class Database {
             })
         ;
     }
-    
 
     metadata(key, value){
         var self = this;
@@ -362,6 +379,77 @@ class Database {
         }
     }
 
+    
+    __sync(self) {
+        /* Fetch all items from server and save them internally. */
+        if(!self) var self = this;
+        var next = function next(){
+            setTimeout(function(){self.__sync(self);}, 1000);
+        };
+        if(self.__synced) return next();
+
+        new Promise(function(resolve, reject){ resolve(); })
+        .then(function(){
+            // send whole-table updates
+            if(!self.__needUpload) return;
+            console.log("Update whole database.");
+            return self.values("update")({
+                range: "A2:C",
+                valueInputOption: "RAW",
+                resource: { values: self.__items || [[]] }
+            }).then(function(){ self.__needUpload = false; });
+        })
+        .then(function(){
+            // apply appends
+            if(self.__needAppends.length < 1) return;
+            console.log("Append " + self.__needAppends.length + " rows.");
+            return self.values("append")({
+                range: "A2",
+                valueInputOption: "RAW",
+                resource: { values: self.__needAppends }
+            }).then(function(){ self.__needAppends = []; });
+        }).then(function(){
+            // refresh anyway
+            console.log("Refresh dataset from server...");
+            return self.values("get")({
+                range: "A2:C" 
+            })
+        }).then(function(result){
+            var values = result.values || [[]];
+            self.__items = values;
+            console.debug("New dataset obtained from server.", values);
+            pubsub.publish("event:googlesheet.refreshed");
+            self.__synced = true;
+        }).then(next).catch(next);
+    }
+
+
+    get count(){
+        return this.__items.length;
+    }
+
+
+    item(row, col, value) {
+        if(!this.crypto.unlocked) throw Error("Crypto engine not unlocked.");
+        if(value == undefined){
+            return this.crypto.decrypt(this.__items[row][col]);
+        } else {
+            this.__items[row][col] = this.crypto.encrypt(value);
+            this.__needUpload = true;
+            this.__synced = false;
+            return this;
+        }
+    }
+
+
+    newRow(line) {
+        /* Add a new row. `line` must be an array. */
+        if(!this.crypto.unlocked) throw Error("Crypto engine not unlocked.");
+        var data = [];
+        for(var i in line) data.push(this.crypto.encrypt(line[i]));
+        this.__needAppends.push(data);
+        this.__synced = false;
+    }
 }
 
 },{"./crypto.js":1,"./firebase.js":2,"./pubsub.js":6}],4:[function(require,module,exports){
@@ -552,7 +640,11 @@ module.exports.subscribe = function(topic, callback, once){
     function wrappedCallback(msg, data){
         callback(data);
     }
-    pubsubjs.subscribe(topic, wrappedCallback, once);
+    if(Boolean(once)){
+        pubsubjs.subscribeOnce(topic, wrappedCallback);
+    } else {
+        pubsubjs.subscribe(topic, wrappedCallback);
+    }
 }
 
 module.exports.publish = function(topic, data){
@@ -561,83 +653,74 @@ module.exports.publish = function(topic, data){
 
 },{"pubsub-js":29}],7:[function(require,module,exports){
 /*
+Keep tracks of a few TOTP codes internally, and manage the refresh jobs.
+The UI will call this class only, for listing all TOTP accounts, and actuell
+codes.
+
 PUBLISH:
     command:firebase.logout
     command:totp.decrypt (mainKey)
     command:ui.totp.table.fillitems (items)
 
 SUBSCRIBE:
-    event:googlesheet.ready (sheetID)
+    event:googlesheet.refresh
     command:totp.decrypt (mainKey)
 */
 
 var pubsub = require("./pubsub.js"),
     sheet = require("./googlesheet.js"),
+    OTP = require("./otp.js"),
     firebase = require("./firebase.js");
 
+var register = {}; // holds where(row + col) access a TOTP entry
+
 module.exports.init = function(){
-    //pubsub.subscribe("event:googlesheet.ready", startTOTP);
+    pubsub.subscribe("event:googlesheet.refreshed", reloadTOTP);
 }
+
+
+pubsub.subscribe("event:googlesheet.refreshed", function(){
+    sheet.database.newRow(["Google", "testtesttest"]);
+}, "once");
 
 //////////////////////////////////////////////////////////////////////////////
 
-var mainKey = null, sheetID = null;
-
-function startTOTP(_sheetID){
-    sheetID = _sheetID;
-    console.debug("Loading spreadsheet", sheetID);
-
-    loadData()
-        .then(readOrSetMainKey)
-    ;
-
-}
-
-
-function loadData(){
-    /* Try to load or initialize a user's main key. If main key exists, load
-    that, see if encrypted with user's uid, or prompt and wait for user's
-    PIN entry. If key cannot be encrypted due to invalid or nonexistent data,
-    prompt and wait for user's decision to reset. */
-
-    var user = firebase.getUser();
-    if(!user) throw Error("No such user.");
-
-    return sheet.values("get")({ range: "totp!A2:B" })
-    .then(function(ret){ return ret.result; })
-    .then(function(data){
-        var ret = {};
-        var values = data.values || [];
-        for(var i in values){
-            ret["item-" + i] = {
-                provider: values[i][0],
-                secret: values[i][1].trim(),
-            };
+function generateTOTPAccessor(itemAccessor, row, col){
+    return function(){
+        var secret = itemAccessor(row, col);
+        if(!secret) return null;
+        try{
+            return (new OTP(secret, "base32")).getTOTP();
+        } catch(e){
+            console.error(e);
+            return null;
         }
-        console.log(ret);
-        pubsub.publish("command:ui.totp.table.fillitems", ret);
-    });
-
-    return sheet.values("get")({ range: "totp!A2:B" })
-        .then(function(ret){ return ret.result; })
-    ;
-}
-
-function readOrSetMainKey(snapshot){
-    console.log(arguments);
-    var array = snapshot.values;
-    var mainKeyExists = array && array[0][0];
-
-    if(mainKeyExists){
-        pubsub("command:totp.decrypt", array[0][0]);
-        return snapshot;
-    } else {
-        
     }
-
 }
 
-},{"./firebase.js":2,"./googlesheet.js":3,"./pubsub.js":6}],8:[function(require,module,exports){
+function reloadTOTP(){
+    console.debug("TOTP reloaded.");
+    var count = sheet.database.count;
+    var itemID, itemRow, itemCol=1, itemName, itemGenerator;
+    register = {};
+    for(var itemRow=0; itemRow<count; itemRow++){
+        itemID = "totp-" + itemRow;
+        itemName = sheet.database.item(itemRow, 0);
+        if(!itemName) itemName = "Unknown";
+        register[itemID] = {
+            name: itemName,
+            getTOTP: generateTOTPAccessor(
+                sheet.database.item,
+                itemRow,
+                itemCol
+            ),
+        }
+    }
+    // call for update
+    console.debug(register);
+}
+
+},{"./firebase.js":2,"./googlesheet.js":3,"./otp.js":5,"./pubsub.js":6}],8:[function(require,module,exports){
 var $ = require("jquery"),
     OTP = require("./otp.js"),
     pubsub = require("./pubsub.js");

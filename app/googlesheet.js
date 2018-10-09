@@ -1,8 +1,7 @@
 /*
 PUBLISH:
-    event:googlesheet.ready
     event:googlesheet.unavailable
-    event:googlesheet.refresh
+    event:googlesheet.refreshed
 
 SUBSCRIBE:
     event:firebase.accesstoken
@@ -48,9 +47,8 @@ function initGAPIClient(){
 
 
 function declareReadyWhenCryptoUnlocked(){
-    pubsub.publish("event:googlesheet.ready");
     if(module.exports.database){
-        module.exports.database.refreshItems();
+        module.exports.database.__sync();
     }
 }
 pubsub.subscribe("event:crypto.unlocked", declareReadyWhenCryptoUnlocked);
@@ -67,6 +65,9 @@ class Database {
     constructor(sheetID){
         this.__metadata = {};
         this.__items = [];
+        this.__synced = false;
+        this.__needUpload = false;
+        this.__needAppends = [];
         this.sheetID = sheetID;
         this.initialize();
     }
@@ -152,28 +153,75 @@ class Database {
         }
     }
 
-    refreshItems() {
-        var self = this;
-        this.values("get")({ range: "A2:C" })
-            .then(function(result){
-                var values = result.values || [[]];
-                self.__items = values;
-                pubsub.publish("event:googlesheet.refresh");
+    
+    __sync(self) {
+        /* Fetch all items from server and save them internally. */
+        if(!self) var self = this;
+        var next = function next(){
+            setTimeout(function(){self.__sync(self);}, 1000);
+        };
+        if(self.__synced) return next();
+
+        new Promise(function(resolve, reject){ resolve(); })
+        .then(function(){
+            // send whole-table updates
+            if(!self.__needUpload) return;
+            console.log("Update whole database.");
+            return self.values("update")({
+                range: "A2:C",
+                valueInputOption: "RAW",
+                resource: { values: self.__items || [[]] }
+            }).then(function(){ self.__needUpload = false; });
+        })
+        .then(function(){
+            // apply appends
+            if(self.__needAppends.length < 1) return;
+            console.log("Append " + self.__needAppends.length + " rows.");
+            return self.values("append")({
+                range: "A2",
+                valueInputOption: "RAW",
+                resource: { values: self.__needAppends }
+            }).then(function(){ self.__needAppends = []; });
+        }).then(function(){
+            // refresh anyway
+            console.log("Refresh dataset from server...");
+            return self.values("get")({
+                range: "A2:C" 
             })
-        ;
+        }).then(function(result){
+            var values = result.values || [[]];
+            self.__items = values;
+            console.debug("New dataset obtained from server.", values);
+            pubsub.publish("event:googlesheet.refreshed");
+            self.__synced = true;
+        }).then(next).catch(next);
     }
 
-    listItems() {
-        var ret = [];
-        for(var i in this.__items){
-            var item = this.__items[i];
-            var decrypted = [];
-            for(var j in item){
-                decrypted[j] = this.crypto.decrypt(item[j]);
-            }
-            ret.append(decrypted);
+
+    get count(){
+        return this.__items.length;
+    }
+
+
+    item(row, col, value) {
+        if(!this.crypto.unlocked) throw Error("Crypto engine not unlocked.");
+        if(value == undefined){
+            return this.crypto.decrypt(this.__items[row][col]);
+        } else {
+            this.__items[row][col] = this.crypto.encrypt(value);
+            this.__needUpload = true;
+            this.__synced = false;
+            return this;
         }
-        return ret;
     }
 
+
+    newRow(line) {
+        /* Add a new row. `line` must be an array. */
+        if(!this.crypto.unlocked) throw Error("Crypto engine not unlocked.");
+        var data = [];
+        for(var i in line) data.push(this.crypto.encrypt(line[i]));
+        this.__needAppends.push(data);
+        this.__synced = false;
+    }
 }
