@@ -14,24 +14,21 @@ var pubsub = require("./pubsub.js"),
     firebase = require("./firebase.js"),
     Crypto = require("./crypto.js");
 
-function fetchSheetID(){
+(function fetchSheetID(){
     var search = /\/d\/([0-9a-zA-Z\-_]{30,})\/{0,1}/g.exec(
         window.location.toString());
     if(search && search.length > 1){
-        return search[1];
+        sheetID = search[1];
     } else {
+        pubsub.publish("event:googlesheet.unavailable");
         return null;
     }
-}
+})();
+
 
 function initGoogleSheet(accessToken){
     console.debug("set access token to gapi.");
     gapi.client.setToken({ access_token: accessToken });
-    sheetID = fetchSheetID();
-    if(!sheetID){
-        pubsub.publish("event:googlesheet.unavailable");
-        return;
-    }
     module.exports.database = new Database(sheetID);
 }
 

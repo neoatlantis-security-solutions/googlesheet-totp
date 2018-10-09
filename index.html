@@ -1,18 +1,52 @@
 <html>
 <head>
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="
+            default-src 'self' *.gstatic.com *.googleapis.com neoatlantis-totp.firebaseapp.com;
+            script-src 'self' apis.google.com code.jquery.com;
+            style-src cdn.firebase.com code.jquery.com fonts.googleapis.com;
+        "
+    >
     <meta charset="utf-8" />
 
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="config.js"></script>
     <script src="main.js"></script>
     <link type="text/css" rel="stylesheet" href="https://cdn.firebase.com/libs/firebaseui/3.1.1/firebaseui.css" />
+    <link type="text/css" rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css" />
 
 </head>
 <body>
 
-    <div id="firebaseui-auth-container"></div>
 
-    <div id="totp-table">
+    <div id="tabs">
+        <ul>
+            <li><a href="#tab-unavailable">Specify a Google Sheet</a></li>
+            <li><a href="#tab-login">Login and Decrypt</a></li>
+            <li><a href="#tab-display">TOTP codes</a></li>
+            <li><a href="#tab-add">Add</a></li>
+        </ul>
+
+        <div id="tab-unavailable">
+            <div>Please input a Google Spreadsheet URL.</div>
+            <div><input name="sheetID" type="text" /></div>
+            <div><button type="button">Load!</button></div>
+        </div>
+
+        <div id="tab-login">
+            <div id="firebaseui-auth-container"></div>
+        </div>
+
+        <div id="tab-display">
+            <div id="totp-table"> </div>
+        </div>
+
+        <div id="tab-add">
+        </div>
+
     </div>
 
 </body>

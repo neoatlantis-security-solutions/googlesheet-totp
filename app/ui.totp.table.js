@@ -4,8 +4,7 @@ SUBSCRIBE:
 
 */
 
-var $ = require("jquery"),
-    totp = require("./totp.js"),
+var totp = require("./totp.js"),
     pubsub = require("./pubsub.js");
 
 var target = null;
