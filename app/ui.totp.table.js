@@ -1,19 +1,14 @@
+/*
+SUBSCRIBE:
+    event:totp.refreshed
+
+*/
+
 var $ = require("jquery"),
-    OTP = require("./otp.js"),
+    totp = require("./totp.js"),
     pubsub = require("./pubsub.js");
 
 var target = null;
-var secrets = {};
-
-function updateTOTPTable(){
-    $(target).find('[data-totp-id]').each(function(){
-        var tid = $(this).attr("data-totp-id");
-        var secret = secrets[tid];
-        if(!secret) return;
-        $(this).find('[data-totp-code]').text(
-            (new OTP(secret, "base32")).getTOTP());
-    });
-}
 
 
 function initUI(){
@@ -26,13 +21,11 @@ function initUI(){
     ;
 }
 
-
-function addItem(totpID, totpProvider, totpSecret){
-    secrets[totpID] = totpSecret;
+function addItem(totpID, totpProvider, totpCode){
     $("<tr>")
         .attr("data-totp-id", totpID)
         .append($("<td>").text(totpProvider))
-        .append($("<td>").attr("data-totp-code", true))
+        .append($("<td>").text(totpCode))
         .appendTo($(target).find("table"))
     ;
 }
@@ -40,7 +33,14 @@ function addItem(totpID, totpProvider, totpSecret){
 
 function clearItems(){
     $(target).find("[data-totp-id]").remove();
-    secrets = {};
+}
+
+function updateTOTPTable(){
+    clearItems();
+    for(var id in totp.register){
+        var item = totp.register[id];
+        addItem(id, item.name, item.getTOTP());
+    }
 }
 
 
@@ -48,23 +48,6 @@ module.exports.init = function(t){
     if(target) return; // cannot init for second time
     target = t;
     initUI();
-    function updater(){
-        updateTOTPTable();
-        setTimeout(updater, 30000);
-    }
-    setTimeout(updater, 30000 - (new Date().getTime()) % 30000);
-    updater();
+    pubsub.subscribe("event:totp.refreshed", updateTOTPTable);
     return module.exports;
 }
-
-
-module.exports.fillItems = function(items){
-    clearItems();
-    for(var id in items){
-        addItem(id, items[id].provider, items[id].secret);
-    }
-    updateTOTPTable();
-    return module.exports;
-}
-
-pubsub.subscribe("command:ui.totp.table.fillitems", module.exports.fillItems);
