@@ -34,3 +34,11 @@ enableOnly("login");
 pubsub.subscribe("event:googlesheet.unavailable", function(){
     enableOnly("unavailable");
 });
+
+pubsub.subscribe("event:crypto.unlocked", function(){
+    enableOnly("display", "add");
+});
+
+pubsub.subscribe("event:crypto.locked", function(){
+    enableOnly("login");
+});

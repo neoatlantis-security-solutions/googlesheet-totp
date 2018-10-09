@@ -751,6 +751,14 @@ pubsub.subscribe("event:googlesheet.unavailable", function(){
     enableOnly("unavailable");
 });
 
+pubsub.subscribe("event:crypto.unlocked", function(){
+    enableOnly("display", "add");
+});
+
+pubsub.subscribe("event:crypto.locked", function(){
+    enableOnly("login");
+});
+
 },{"./pubsub.js":6}],9:[function(require,module,exports){
 /*
 SUBSCRIBE:
