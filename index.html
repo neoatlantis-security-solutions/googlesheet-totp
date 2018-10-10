@@ -49,10 +49,16 @@
             Add a new authentication code generator. 
             Copy and paste the seed below.
         </div>
-        <div><input type="text" name="secret" /></div>
-        <div>Test code -- you may check this code with your provider.</div>
-        <div name="testcode"></div>
-        <div><button type="button">Add</button></div>
+        <div>Provider:<input type="text" name="provider" /></div>
+        <div>Secret:<input type="text" name="secret" /></div>
+        <div name="testcode-container">
+            Test code -- you may check this code with your provider.
+            <span name="testcode"></span>
+        </div>
+        <div>
+            <button type="button" name="test">Test</button>
+            <button type="button" name="confirm" disabled>Add</button>
+        </div>
     </div>
 
 </div>

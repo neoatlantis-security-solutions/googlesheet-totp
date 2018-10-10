@@ -1,6 +1,7 @@
 /*
 SUBSCRIBE:
     event:googlesheet.unavailable
+    event:googlesheet.available
 */
 
 var pubsub = require("./pubsub.js");
@@ -28,8 +29,19 @@ function enableOnly(){
     }
 }
 
-enableOnly("login");
+function hideTab(){
+    for(var i in arguments){
+        tabs.find('[href="#tab-' + arguments[i] + '"]').closest("li").hide();
+    }
+}
 
+enableOnly("login", "add"); // TODO remove "add"
+//enableOnly("login");
+
+
+pubsub.subscribe("event:googlesheet.available", function(){
+    hideTab("unavailable");
+});
 
 pubsub.subscribe("event:googlesheet.unavailable", function(){
     enableOnly("unavailable");

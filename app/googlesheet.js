@@ -1,5 +1,6 @@
 /*
 PUBLISH:
+    event:googlesheet.available    // means only a sheetID is found
     event:googlesheet.unavailable
     event:googlesheet.refreshed
 
@@ -19,6 +20,7 @@ var pubsub = require("./pubsub.js"),
         window.location.toString());
     if(search && search.length > 1){
         sheetID = search[1];
+        pubsub.publish("event:googlesheet.available");
     } else {
         pubsub.publish("event:googlesheet.unavailable");
         return null;

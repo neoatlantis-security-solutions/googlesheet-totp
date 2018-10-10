@@ -43,21 +43,29 @@ function generateTOTPAccessor(row, col){
 
 function reloadTOTP(){
     var count = sheet.database.count;
-    var itemID, itemRow, itemCol=1, itemName, itemGenerator;
+    var itemID, itemRow, itemName, itemGenerator;
     module.exports.register = {};
     for(var itemRow=0; itemRow<count; itemRow++){
         itemID = "totp-" + itemRow;
+        if(!sheet.database.item(itemRow, 1)) continue;
         itemName = sheet.database.item(itemRow, 0);
         if(!itemName) itemName = "Unknown";
         module.exports.register[itemID] = {
             name: itemName,
-            getTOTP: generateTOTPAccessor(
-                itemRow,
-                itemCol
-            ),
+            getTOTP: generateTOTPAccessor(itemRow, 1),
         }
     }
     // call for update
     console.debug("TOTP reloaded.", module.exports.register);
     pubsub.publish("event:totp.refreshed");
 }
+
+function addTOTP(name, secret){
+    sheet.database.newRow([
+        name,
+        secret,
+        new Date().toString(),
+    ]);
+}
+
+module.exports.add = addTOTP;

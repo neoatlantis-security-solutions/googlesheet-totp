@@ -1,5 +1,6 @@
 function main(){
     require("./ui.tabs.js");
+    require("./ui.tabs.add.js");
     require("./ui.totp.table.js").init("#totp-table");
     require("./ui.dialog.decrypt-in-progress.js");
 
