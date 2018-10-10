@@ -92,6 +92,11 @@ class Database {
                 console.debug("Retrieved current metadata", self.__metadata);
             })
             .then(function(){self.__initCrypto(self)})
+            .catch(function(e){
+                console.error(e);
+                pubsub.publish("command:firebase.logout");
+                pubsub.publish("event:googlesheet.unavailable");
+            })
         ;
     }
 

@@ -35,8 +35,7 @@ function hideTab(){
     }
 }
 
-enableOnly("login", "add"); // TODO remove "add"
-//enableOnly("login");
+enableOnly("login");
 
 
 pubsub.subscribe("event:googlesheet.available", function(){

@@ -88,6 +88,22 @@ class Crypto {
         ;
     }
 
+    reencrypt (newPassword){
+        /* Generate another storagable credential that protects the random
+        plain main key in another user password. Used for setting user's
+        personal password instead of default. Returns a Promise.*/
+        var self = this;
+        return new Promise(function(resolve, reject){
+            if(!self.__plainMainKey) reject("Crypto not unlocked.");
+        }).then(function(){
+            return deriveKeyFromPassword(this.sheetID, password);
+        }).then(function(key){
+            var encryptedMainKey = encrypt(key, self.__plainMainKey);
+            self.encryptedMainKey = encryptedMainKey;
+            return encryptedMainKey;
+        });
+    }
+
     unlock (password) {
         var self = this;
         if(!this.encryptedMainKey){
