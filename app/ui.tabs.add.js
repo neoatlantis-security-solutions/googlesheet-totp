@@ -25,11 +25,3 @@ function resetForm(){
 }
 
 resetForm();
-
-window.onbeforeunload = function(){
-    var secret = target.find('input[name="secret"]').val().trim();
-    if(secret){
-        return "Warning: you have unsaved TOTP entry! Confirm to leave the page?";
-    }
-    return false;
-}

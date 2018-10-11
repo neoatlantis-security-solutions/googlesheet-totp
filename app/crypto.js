@@ -3,7 +3,10 @@ PUBLISH:
     event:crypto.kdf.progress (progress)
     event:crypto.unlocked # crypto engine is ready for en-/decrypting anything
     event:crypto.locked  # crypto engine not supplied with a valid Pwd
+    command:crypto.lock  # from credential holder
 
+SUBSCRIBE:
+    command:crypto.lock  # listened by main crypto engine
 */
 
 var pubsub = require("./pubsub.js");
@@ -66,12 +69,41 @@ function deriveKeyFromPassword(sheetID, password){
     });
 }
 
+function encloseCredentials(mainKey, password){
+    var ret = {};
+    var failedAttempts = 0;
+    ret.encryptMainKey = function(p){ return encrypt(p, mainKey); }
+    ret.setNewPassword = function(p){
+        ret.verifyPassword = function(x){
+            var result = (p == x);
+            if(!result){
+                failedAttempts += 1;
+                if(failedAttempts >= 3){
+                    mainKey = null;
+                    pubsub.publish("command:crypto.lock");
+                }
+            } else {
+                failedAttempts = 0;
+            }
+            return result;
+        }
+    }
+    ret.setNewPassword(password);
+    ret.encrypt = function(data){ return encrypt(mainKey, data); }
+    ret.decrypt = function(data){ return decrypt(mainKey, data); }
+    return ret;
+}
+
 
 class Crypto {
 
     constructor (sheetID, loadExistingMainKey) {
+        var self = this;
         this.sheetID = sheetID;
         this.encryptedMainKey = loadExistingMainKey;
+        pubsub.subscribe("command:crypto.lock", function(){
+            self.lock(self);
+        }, "once");
     }
 
     generate (password) {
@@ -80,7 +112,8 @@ class Crypto {
             .then(function(key){
                 var randomPlainMainKey = nacl.randomBytes(32);
                 self.encryptedMainKey = encrypt(key, randomPlainMainKey);
-                self.__plainMainKey = randomPlainMainKey;
+                self.credentialHolder = encloseCredentials(
+                    randomPlainMainKey, password);
                 pubsub.publish("event:crypto.unlocked");
                 console.debug("Crypto engine unlocked.");
                 return self.encryptedMainKey;
@@ -88,17 +121,20 @@ class Crypto {
         ;
     }
 
-    reencrypt (newPassword){
+    reencrypt (oldPassword, newPassword){
         /* Generate another storagable credential that protects the random
         plain main key in another user password. Used for setting user's
         personal password instead of default. Returns a Promise.*/
         var self = this;
         return new Promise(function(resolve, reject){
-            if(!self.__plainMainKey) reject("Crypto not unlocked.");
+            if(!self.credentialHolder) return reject("Crypto not unlocked.");
+            if(!self.credentialHolder.verifyPassword(oldPassword))
+                return reject("Old password incorrect.");
         }).then(function(){
             return deriveKeyFromPassword(this.sheetID, password);
         }).then(function(key){
-            var encryptedMainKey = encrypt(key, self.__plainMainKey);
+            var encryptedMainKey = self.credentialHolder.encryptMainKey(key);
+            self.credentialHolder.setNewPassword(newPassword);
             self.encryptedMainKey = encryptedMainKey;
             return encryptedMainKey;
         });
@@ -120,7 +156,8 @@ class Crypto {
             .then(function(key){
                 var plainMainKey = decrypt(key, self.encryptedMainKey);
                 if(plainMainKey){
-                    self.__plainMainKey = plainMainKey;
+                    self.credentialHolder = encloseCredentials(
+                        plainMainKey, password);
                     pubsub.publish("event:crypto.unlocked");
                     console.debug("Crypto engine unlocked.");
                 } else {
@@ -130,28 +167,29 @@ class Crypto {
         ;
     }
 
-    lock() {
-        this.__plainMainKey = null;
+    lock(self) {
+        if(!self) self = this;
+        self.credentialHolder = null;
         pubsub.publish("event:crypto.locked");
         console.debug("Crypto engine locked up.");
     }
 
     get unlocked(){
-        return Boolean(this.__plainMainKey);
+        return Boolean(this.credentialHolder);
     }
 
     encrypt(string) {
         // encrypt any UTF8-plaintext into Base64-ciphertext
-        if(!this.__plainMainKey) throw Error("Crypto engine not unlocked.");
+        if(!this.credentialHolder) throw Error("Crypto engine not unlocked.");
         var data = nacl.util.decodeUTF8(string);
-        return encrypt(this.__plainMainKey, data);
+        return this.credentialHolder.encrypt(data);
     }
 
     decrypt(string) {
         // decrypt any Base64-ciphertext to UTF8-plaintext
-        if(!this.__plainMainKey) throw Error("Crypto engine not unlocked.");
+        if(!this.credentialHolder) throw Error("Crypto engine not unlocked.");
         try{
-            return nacl.util.encodeUTF8(decrypt(this.__plainMainKey, string));
+            return nacl.util.encodeUTF8(this.credentialHolder.decrypt(string));
         } catch(e){
             return null;
         }

@@ -206,6 +206,11 @@ class Database {
         return this.__items.length;
     }
 
+    
+    get synced(){
+        return Boolean(this.__synced);
+    }
+
 
     item(row, col, value) {
         if(!this.crypto.unlocked) throw Error("Crypto engine not unlocked.");
