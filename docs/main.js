@@ -125,7 +125,11 @@ class Crypto {
     reencrypt (oldPassword, newPassword){
         /* Generate another storagable credential that protects the random
         plain main key in another user password. Used for setting user's
-        personal password instead of default. Returns a Promise.*/
+        personal password instead of default. Returns a Promise.
+          
+          DO NOT call this method from UI, use methods in `googlesheet.js`
+          instead, which take cares of sync to server.
+        */
         var self = this;
         return new Promise(function(resolve, reject){
             if(!self.credentialHolder) return reject("Crypto not unlocked.");
@@ -143,6 +147,7 @@ class Crypto {
 
     unlock (password) {
         var self = this;
+        if(this.credentialHolder) return;
         if(!this.encryptedMainKey){
             throw Error("Crypto not initialized with a main key.");
         }
@@ -422,6 +427,28 @@ class Database {
         ;
     }
 
+
+    unlock (password){
+        // proxy to the crypto's unlock, if user has to input password manually
+        return this.crypto.unlock(password);
+    }
+
+
+    changePassword (oldPassword, newPassword){
+        if(this.metadata("default-mainkey")){
+            oldPassword = firebase.getUser().uid;
+        }
+        return this.crypto.reencrypt(oldPassword, newPassword)
+            .then(function(encryptedMainKey){
+                return self.metadata("encrypted-main-key", encryptedMainKey);
+            })
+            .then(function(){
+                return self.metadata("default-mainkey", false);
+            })
+        ;
+    }
+
+
     metadata(key, value){
         var self = this;
         if(value === undefined){
@@ -520,7 +547,7 @@ class Database {
 },{"./crypto.js":1,"./firebase.js":2,"./pubsub.js":6}],4:[function(require,module,exports){
 function main(){
     require("./ui.tabs.js");
-    require("./ui.tabs.add.js");
+    require("./ui.tabs.manage.js");
     require("./ui.totp.table.js").init("#totp-table");
     require("./ui.dialog.decrypt-in-progress.js");
     require("./ui.unload.js");
@@ -533,7 +560,7 @@ function main(){
 
 $(main);
 
-},{"./firebase.js":2,"./googlesheet.js":3,"./totp.js":7,"./ui.dialog.decrypt-in-progress.js":8,"./ui.tabs.add.js":9,"./ui.tabs.js":10,"./ui.totp.table.js":11,"./ui.unload.js":12}],5:[function(require,module,exports){
+},{"./firebase.js":2,"./googlesheet.js":3,"./totp.js":7,"./ui.dialog.decrypt-in-progress.js":8,"./ui.tabs.js":9,"./ui.tabs.manage.js":10,"./ui.totp.table.js":11,"./ui.unload.js":12}],5:[function(require,module,exports){
 const base32 = require('base32.js')
 const sha1 = require('js-sha1')
 const naclutil = require("tweetnacl-util")
@@ -823,35 +850,6 @@ pubsub.subscribe("event:crypto.kdf.progress", function(progress){
 });
 
 },{"./pubsub.js":6}],9:[function(require,module,exports){
-var OTP = require("./otp.js");
-var totp = require("./totp.js"),
-    pubsub = require("./pubsub.js");
-
-var target = $("#tab-add");
-
-target.find('[name="confirm"]').click(function(){
-    var provider = target.find('input[name="provider"]').val().trim();
-    var secret = target.find('input[name="secret"]').val().trim();
-    totp.add(provider, secret);
-    resetForm();
-});
-
-target.find('[name="test"]').click(function(){
-    var secret = target.find('input[name="secret"]').val().trim();
-    target.find('[name="testcode-container"]').show()
-        .find('[name="testcode"]').text((new OTP(secret, "base32")).getTOTP());
-    target.find('[name="confirm"]').attr("disabled", false);
-});
-
-function resetForm(){
-    target.find('[name="testcode-container"]').hide();
-    target.find('[name="confirm"]').attr("disabled", true);
-    target.find('input').val("");
-}
-
-resetForm();
-
-},{"./otp.js":5,"./pubsub.js":6,"./totp.js":7}],10:[function(require,module,exports){
 /*
 SUBSCRIBE:
     event:googlesheet.unavailable
@@ -862,7 +860,7 @@ var pubsub = require("./pubsub.js");
 
 
 var tabIDs = [
-    "unavailable", "login", "display", "add"
+    "unavailable", "login", "display", "manage"
 ];
 
 var tabs = $("#tabs").tabs();
@@ -889,7 +887,8 @@ function hideTab(){
     }
 }
 
-enableOnly("login");
+//enableOnly("login");
+enableOnly("login", "manage");
 
 
 pubsub.subscribe("event:googlesheet.available", function(){
@@ -901,14 +900,43 @@ pubsub.subscribe("event:googlesheet.unavailable", function(){
 });
 
 pubsub.subscribe("event:crypto.unlocked", function(){
-    enableOnly("display", "add");
+    enableOnly("display", "manage");
 });
 
 pubsub.subscribe("event:crypto.locked", function(){
     enableOnly("login");
 });
 
-},{"./pubsub.js":6}],11:[function(require,module,exports){
+},{"./pubsub.js":6}],10:[function(require,module,exports){
+var OTP = require("./otp.js");
+var totp = require("./totp.js"),
+    pubsub = require("./pubsub.js");
+
+var target = $("#tab-manage");
+
+target.find('[name="confirm"]').click(function(){
+    var provider = target.find('input[name="provider"]').val().trim();
+    var secret = target.find('input[name="secret"]').val().trim();
+    totp.add(provider, secret);
+    resetForm();
+});
+
+target.find('[name="test"]').click(function(){
+    var secret = target.find('input[name="secret"]').val().trim();
+    target.find('[name="testcode-container"]').show()
+        .find('[name="testcode"]').text((new OTP(secret, "base32")).getTOTP());
+    target.find('[name="confirm"]').attr("disabled", false);
+});
+
+function resetForm(){
+    target.find('[name="testcode-container"]').hide();
+    target.find('[name="confirm"]').attr("disabled", true);
+    target.find('input').val("");
+}
+
+resetForm();
+
+},{"./otp.js":5,"./pubsub.js":6,"./totp.js":7}],11:[function(require,module,exports){
 /*
 SUBSCRIBE:
     event:totp.refreshed
@@ -967,7 +995,7 @@ var sheet = require("./googlesheet.js");
 
 window.onbeforeunload = function(){
     var secret = Boolean(
-        $("#tab-add").find('input[name="secret"]').val().trim());
+        $("#tab-manage").find('input[name="secret"]').val().trim());
     var unsynced = (sheet.database ? !sheet.database.synced : false);
     console.debug("Exit confirm", secret, unsynced);
     if(secret || unsynced){

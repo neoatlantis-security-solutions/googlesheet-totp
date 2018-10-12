@@ -8,7 +8,7 @@ var pubsub = require("./pubsub.js");
 
 
 var tabIDs = [
-    "unavailable", "login", "display", "add"
+    "unavailable", "login", "display", "manage"
 ];
 
 var tabs = $("#tabs").tabs();
@@ -35,7 +35,8 @@ function hideTab(){
     }
 }
 
-enableOnly("login");
+//enableOnly("login");
+enableOnly("login", "manage");
 
 
 pubsub.subscribe("event:googlesheet.available", function(){
@@ -47,7 +48,7 @@ pubsub.subscribe("event:googlesheet.unavailable", function(){
 });
 
 pubsub.subscribe("event:crypto.unlocked", function(){
-    enableOnly("display", "add");
+    enableOnly("display", "manage");
 });
 
 pubsub.subscribe("event:crypto.locked", function(){

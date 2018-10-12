@@ -124,7 +124,11 @@ class Crypto {
     reencrypt (oldPassword, newPassword){
         /* Generate another storagable credential that protects the random
         plain main key in another user password. Used for setting user's
-        personal password instead of default. Returns a Promise.*/
+        personal password instead of default. Returns a Promise.
+          
+          DO NOT call this method from UI, use methods in `googlesheet.js`
+          instead, which take cares of sync to server.
+        */
         var self = this;
         return new Promise(function(resolve, reject){
             if(!self.credentialHolder) return reject("Crypto not unlocked.");
@@ -142,6 +146,7 @@ class Crypto {
 
     unlock (password) {
         var self = this;
+        if(this.credentialHolder) return;
         if(!this.encryptedMainKey){
             throw Error("Crypto not initialized with a main key.");
         }

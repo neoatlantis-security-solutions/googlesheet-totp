@@ -2,7 +2,7 @@ var OTP = require("./otp.js");
 var totp = require("./totp.js"),
     pubsub = require("./pubsub.js");
 
-var target = $("#tab-add");
+var target = $("#tab-manage");
 
 target.find('[name="confirm"]').click(function(){
     var provider = target.find('input[name="provider"]').val().trim();

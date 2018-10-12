@@ -27,7 +27,7 @@
         <li><a href="#tab-unavailable">Specify a Google Sheet</a></li>
         <li><a href="#tab-login">Login and Decrypt</a></li>
         <li><a href="#tab-display">TOTP codes</a></li>
-        <li><a href="#tab-add">Add</a></li>
+        <li><a href="#tab-manage">Manage</a></li>
     </ul>
 
     <div id="tab-unavailable">
@@ -44,13 +44,13 @@
         <div id="totp-table"> </div>
     </div>
 
-    <div id="tab-add">
+    <div id="tab-manage">
         <div>
             Add a new authentication code generator. 
             Copy and paste the seed below.
         </div>
-        <div>Provider:<input type="text" name="provider" /></div>
-        <div>Secret:<input type="text" name="secret" /></div>
+        <div>Provider: <input type="text" name="provider" /></div>
+        <div>Secret: <input type="text" name="secret" /></div>
         <div name="testcode-container">
             Test code -- you may check this code with your provider.
             <span name="testcode"></span>
@@ -58,6 +58,29 @@
         <div>
             <button type="button" name="test">Test</button>
             <button type="button" name="confirm" disabled>Add</button>
+        </div>
+
+        <hr />
+
+        <div>
+            By default, TOTP database is encrypted with a password that was
+            generated randomly the first time you registered with this service.
+            This can be changed to a personal password that is known only by 
+            you.
+            <p>
+            To change password, enter your current and new passwords below.
+        </div>
+        <div>
+            <div name="oldpassword">
+                Old password: <input name="old-password" type="password" />
+            </div>
+            <div>
+                New password: <input name="new-password" type="password" />
+            </div>
+            <div>
+                Type password again: <input name="new-password2" type="password" />
+            </div>
+            <div><button type="button" name="change-password">Change Password</button></div>
         </div>
     </div>
 

@@ -140,6 +140,28 @@ class Database {
         ;
     }
 
+
+    unlock (password){
+        // proxy to the crypto's unlock, if user has to input password manually
+        return this.crypto.unlock(password);
+    }
+
+
+    changePassword (oldPassword, newPassword){
+        if(this.metadata("default-mainkey")){
+            oldPassword = firebase.getUser().uid;
+        }
+        return this.crypto.reencrypt(oldPassword, newPassword)
+            .then(function(encryptedMainKey){
+                return self.metadata("encrypted-main-key", encryptedMainKey);
+            })
+            .then(function(){
+                return self.metadata("default-mainkey", false);
+            })
+        ;
+    }
+
+
     metadata(key, value){
         var self = this;
         if(value === undefined){
