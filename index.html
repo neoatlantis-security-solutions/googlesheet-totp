@@ -1,8 +1,16 @@
 ---
 layout: default
 permalink: /
-javascripts:
-    - /scripts/index.js
+javascript: index.js
 ---
 
-<div id="firebaseui-auth-container"></div>
+<form>
+    <div class="form-group">
+        <label for="sheeturl">Google Spreadsheet URL</label>
+        <input class="form-control" id="sheeturl" placeholder="https://docs.google.com/spreadsheets/d/....">
+        <small class="form-text text-muted">This is the spreadsheet that we'll use to store your TOTP secrets with.</small>
+    </div>
+    <div id="firebaseui-auth-container"></div>
+</form>
+
+

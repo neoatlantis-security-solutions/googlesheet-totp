@@ -1,18 +1,16 @@
-/*
-PUBLISH:
-    event:crypto.kdf.progress (progress)
-    event:crypto.unlocked # crypto engine is ready for en-/decrypting anything
-    event:crypto.locked  # crypto engine not supplied with a valid Pwd
-    command:crypto.lock  # from credential holder
+define([
+    'firebase',
+    'nacl',
+    'ext/scrypt'
+], function(
+    firebase,
+    nacl,
+    scryptlib
+){
+/****************************************************************************/
 
-SUBSCRIBE:
-    command:crypto.lock  # listened by main crypto engine
-*/
 
-var pubsub = require("./pubsub.js");
-var nacl = require("tweetnacl");
-nacl.util = require("tweetnacl-util");
-var scryptlib = require("scrypt-js");
+var scryptlib = require("ext/scrypt");
 
 function concatUint8Array(a, b){
     var ret = new Uint8Array(a.length + b.length);
@@ -63,9 +61,9 @@ function deriveKeyFromPassword(sheetID, password){
     var salt = nacl.util.decodeUTF8(sheetID),
         password = nacl.util.decodeUTF8(password);
 
-    pubsub.publish("event:crypto.kdf.progress", 0);
+    //pubsub.publish("event:crypto.kdf.progress", 0);
     return scrypt(password, salt, function(p){
-        pubsub.publish("event:crypto.kdf.progress", p);
+        //pubsub.publish("event:crypto.kdf.progress", p);
     });
 }
 
@@ -101,9 +99,6 @@ class Crypto {
         var self = this;
         this.sheetID = sheetID;
         this.encryptedMainKey = loadExistingMainKey;
-        pubsub.subscribe("command:crypto.lock", function(){
-            self.lock(self);
-        }, "once");
     }
 
     generate (password) {
@@ -114,7 +109,6 @@ class Crypto {
                 self.encryptedMainKey = encrypt(key, randomPlainMainKey);
                 self.credentialHolder = encloseCredentials(
                     randomPlainMainKey, password);
-                pubsub.publish("event:crypto.unlocked");
                 console.debug("Crypto engine unlocked.");
                 return self.encryptedMainKey;
             })
@@ -154,7 +148,7 @@ class Crypto {
             // If password not supplied, fails automatically without trying
             // to derive any key. Used to inform other services asking for
             // user password input.
-            pubsub.publish("event:crypto.locked");
+            throw Error("event:crypto.locked");
             return;
         }
         return deriveKeyFromPassword(this.sheetID, password)
@@ -163,10 +157,10 @@ class Crypto {
                 if(plainMainKey){
                     self.credentialHolder = encloseCredentials(
                         plainMainKey, password);
-                    pubsub.publish("event:crypto.unlocked");
+//                    pubsub.publish("event:crypto.unlocked");
                     console.debug("Crypto engine unlocked.");
                 } else {
-                    pubsub.publish("event:crypto.locked");
+//                    pubsub.publish("event:crypto.locked");
                 }
             })
         ;
@@ -175,7 +169,7 @@ class Crypto {
     lock(self) {
         if(!self) self = this;
         self.credentialHolder = null;
-        pubsub.publish("event:crypto.locked");
+        //pubsub.publish("event:crypto.locked");
         console.debug("Crypto engine locked up.");
     }
 
@@ -202,4 +196,7 @@ class Crypto {
 
 }
 
-module.exports = Crypto;
+
+return Crypto;
+/****************************************************************************/
+});

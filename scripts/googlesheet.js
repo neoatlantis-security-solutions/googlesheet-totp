@@ -1,74 +1,28 @@
-/*
-PUBLISH:
-    event:googlesheet.available    // means only a sheetID is found
-    event:googlesheet.unavailable
-    event:googlesheet.refreshed
-
-SUBSCRIBE:
-    event:firebase.accesstoken
-    event:crypto.unlocked       // TODO
-    event:crypto.locked         // TODO
-*/
-
-var sheetID = null;
-var pubsub = require("./pubsub.js"),
-    firebase = require("./firebase.js"),
-    Crypto = require("./crypto.js");
-
-(function fetchSheetID(){
-    var search = /\/d\/([0-9a-zA-Z\-_]{30,})\/{0,1}/g.exec(
-        window.location.toString());
-    if(search && search.length > 1){
-        sheetID = search[1];
-        pubsub.publish("event:googlesheet.available");
-    } else {
-        pubsub.publish("event:googlesheet.unavailable");
-        return null;
-    }
-})();
+define(['crypto'], function(Crypto){
+/****************************************************************************/
 
 
-function initGoogleSheet(accessToken){
-    console.debug("set access token to gapi.");
-    gapi.client.setToken({ access_token: accessToken });
-    module.exports.database = new Database(sheetID);
-}
-
-function initGAPIClient(){
-    gapi.client.init({
-        discoveryDocs: [
-            "https://sheets.googleapis.com/$discovery/rest?version=v4",
-        ],
-    }).then(function(){
-        pubsub.subscribe("event:firebase.accesstoken", initGoogleSheet);
-    });
-}
 
 
-function declareReadyWhenCryptoUnlocked(){
-    if(module.exports.database){
-        module.exports.database.__sync();
-    }
-}
-pubsub.subscribe("event:crypto.unlocked", declareReadyWhenCryptoUnlocked);
-
-
-module.exports.init = function(){
-    return gapi.load('client', initGAPIClient);
-}
-
-//////////////////////////////////////////////////////////////////////////////
-
-class Database {
+class GoogleSheet {
     
-    constructor(sheetID){
+    constructor (url){
+        var self = this;
         this.__metadata = {};
         this.__items = [];
         this.__synced = false;
         this.__needUpload = false;
         this.__needAppends = [];
-        this.sheetID = sheetID;
-        this.initialize();
+        self.sheetID = this.fetchSheetID(url);
+    }
+
+    fetchSheetID (url) {
+        var search = /\/d\/([0-9a-zA-Z\-_]{30,})\/{0,1}/g.exec(url);
+        if(search && search.length > 1){
+            return search[1];
+        } else {
+            return null;
+        }
     }
 
     values(method){
@@ -82,36 +36,35 @@ class Database {
         }
     }
 
-    initialize(){
+    async initialize(){
         var self = this;
         console.debug("Initializing google sheet database...");
-        this.values("get")({ range: "A1" })
-            .then(function(result){
-                var values = result.values || [["{}"]];
-                self.__metadata = JSON.parse(values[0][0]);
-                console.debug("Retrieved current metadata", self.__metadata);
-            })
-            .then(function(){self.__initCrypto(self)})
-            .catch(function(e){
-                console.error(e);
-                pubsub.publish("command:firebase.logout");
-                pubsub.publish("event:googlesheet.unavailable");
-            })
-        ;
+        var result = await this.values("get")({ range: "A1" });
+        if(!result){
+            throw Error("access denied");
+        }
+
+        var values = result.values || [["{}"]];
+        self.__metadata = JSON.parse(values[0][0]);
+        console.debug("Retrieved current metadata", self.__metadata);
+        await self.__initCrypto(self);
     }
 
-    __initCrypto(self) {
-        var encryptedMainKey = self.metadata("encrypted-main-key"),
+    async __initCrypto(self) {
+        var currentUser = firebase.auth().currentUser;
+        var uuid = self.metadata("uuid"),
+            encryptedMainKey = self.metadata("encrypted-main-key"),
             isDefaultMainKey = self.metadata("default-mainkey");
-        if(encryptedMainKey){
+        if(!currentUser || !currentUser.uid) throw Error("not logged in");
+
+        if(encryptedMainKey && uuid){
             console.debug("Found existing main key.");
-            self.crypto = new Crypto(self.sheetID, encryptedMainKey);
+            self.crypto = new Crypto(uuid, encryptedMainKey);
             if(isDefaultMainKey){
                 // we are indicated the main key can be decrypted with
                 // default configuration - the uid from firebase
                 console.debug("Trying to unlock the crypto engine.");
-                var uid = firebase.getUser().uid;
-                return self.crypto.unlock(uid);
+                return self.crypto.unlock(currentUser.uid);
             } else {
                 // Let the crypto engine send a "cannot be unlocked"
                 // signal, so that other services will ask for user
@@ -123,21 +76,16 @@ class Database {
         // if zero metadata, initialize with at least a main key
         // and a "default" indicator
         console.debug("Main key does not exist. Generate a new one.");
-        var uid = firebase.getUser().uid;
-        self.crypto = new Crypto(self.sheetID);
+        var uid = firebase.auth().currentUser.uid,
+            uuid = self.sheetID;
+
+        self.crypto = new Crypto(uuid);
         console.debug("New main key will be generated.");
-        return self.crypto.generate(uid)
-            .then(function(encryptedMainKey){
-                console.debug("Saving main key.");
-                return self.metadata(
-                    "encrypted-main-key",
-                    encryptedMainKey
-                );
-            })
-            .then(function(){
-                return self.metadata("default-mainkey", true);
-            })
-        ;
+        var encryptedMainKey = await self.crypto.generate(uid);
+        console.debug("Saving main key.");
+        self.metadata("encrypted-main-key", encryptedMainKey);
+        self.metadata("default-mainkey", true);
+        await self.metadata("uuid", uuid);
     }
 
 
@@ -256,3 +204,32 @@ class Database {
         this.__synced = false;
     }
 }
+
+
+
+
+var getGoogleSheet = async function getGoogleSheet(token, url){
+    await new Promise(function(resolve, reject){
+        console.log("Load GAPI client.");
+        gapi.load("client", {
+            callback: resolve,
+            onerror: reject,
+        });
+    });
+    console.log("Load Google Spreadsheets API.");
+    await gapi.client.init({ discoveryDocs: [
+        "https://sheets.googleapis.com/$discovery/rest?version=v4",
+    ] });
+    console.log("Set token.");
+    gapi.client.setToken({ access_token: token });
+    
+    var ret = new GoogleSheet(url);
+    await ret.initialize();
+    return ret;
+};
+
+return getGoogleSheet;
+
+
+/****************************************************************************/
+});

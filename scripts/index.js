@@ -1,4 +1,4 @@
-(function(){
+require(["firebase"], function(firebase){
 /****************************************************************************/
 
 
@@ -17,7 +17,9 @@ var options = {
     }
 };
 
-
+function redirectToDisplay(){
+    window.location.href = "/display/";
+}
 /*function onFirebaseAuthStateChanged(user){
     console.debug("auth state changed", user);
     if(user){
@@ -30,25 +32,29 @@ var options = {
 
 function onRedirectResult(result){
     if(!result.user) return false;
-    console.debug("redirect result", result);
+    //console.debug("redirect result", result);
     var token = result.credential.accessToken;
     window.sessionStorage.setItem("token", token);
+    window.sessionStorage.setItem("sheet", $("#sheeturl").val());
+    redirectToDisplay();
     return false;
 }
 
 
 $(function(){
-    if(window.sessionStorage.getItem("token")){
-        window.location.href = "/display/";
-        return;
+    if(
+        window.sessionStorage.getItem("token") &&
+        window.sessionStorage.getItem("sheet")
+    ){
+        return redirectToDisplay();
     }
-
-    /* Initialize firebase and associated event handlers, etc. Should be called
-    only once. */
-    firebase.initializeApp(CONFIG);
     
     var ui = new firebaseui.auth.AuthUI(firebase.auth());
     ui.start("#firebaseui-auth-container", options);
+
+    if(window.location.hash){
+        $("#sheeturl").val(window.location.hash.slice(1));
+    }
 
     //firebase.auth().onAuthStateChanged(onFirebaseAuthStateChanged);
     firebase.auth().getRedirectResult().then(onRedirectResult);
@@ -70,4 +76,4 @@ module.exports.getUser = function(){
 
 
 /****************************************************************************/
-})();
+});
