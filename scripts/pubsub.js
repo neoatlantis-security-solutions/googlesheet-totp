@@ -1,16 +1,21 @@
-var pubsubjs = require('pubsub-js');
+define([], function(){
 
-module.exports.subscribe = function(topic, callback, once){
-    function wrappedCallback(msg, data){
-        callback(data);
-    }
-    if(Boolean(once)){
-        pubsubjs.subscribeOnce(topic, wrappedCallback);
-    } else {
-        pubsubjs.subscribe(topic, wrappedCallback);
-    }
-}
+    return {
+        subscribe: function(topic, callback, once){
+            function wrappedCallback(eventObject){
+                callback(eventObject.data);
+            }
+            if(Boolean(once)){
+                $(window).one(topic, wrappedCallback);
+            } else {
+                $(window).on(topic, wrappedCallback);
+            }
+        },
 
-module.exports.publish = function(topic, data){
-    pubsubjs.publish(topic, data);
-}
+        publish: function(topic, data){
+            $(window).trigger(topic, data);
+        }
+
+    }
+
+});

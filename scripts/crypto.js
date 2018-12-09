@@ -1,8 +1,10 @@
 define([
+    'pubsub',
     'firebase',
     'nacl',
     'ext/scrypt'
 ], function(
+    pubsub,
     firebase,
     nacl,
     scryptlib
@@ -61,9 +63,9 @@ function deriveKeyFromPassword(sheetID, password){
     var salt = nacl.util.decodeUTF8(sheetID),
         password = nacl.util.decodeUTF8(password);
 
-    //pubsub.publish("event:crypto.kdf.progress", 0);
+    pubsub.publish("event:crypto.kdf.progress", 0);
     return scrypt(password, salt, function(p){
-        //pubsub.publish("event:crypto.kdf.progress", p);
+        pubsub.publish("event:crypto.kdf.progress", p);
     });
 }
 
@@ -148,7 +150,7 @@ class Crypto {
             // If password not supplied, fails automatically without trying
             // to derive any key. Used to inform other services asking for
             // user password input.
-            throw Error("event:crypto.locked");
+            pubsub.publish("event:crypto.locked");
             return;
         }
         return deriveKeyFromPassword(this.sheetID, password)
@@ -157,10 +159,10 @@ class Crypto {
                 if(plainMainKey){
                     self.credentialHolder = encloseCredentials(
                         plainMainKey, password);
-//                    pubsub.publish("event:crypto.unlocked");
+                    pubsub.publish("event:crypto.unlocked");
                     console.debug("Crypto engine unlocked.");
                 } else {
-//                    pubsub.publish("event:crypto.locked");
+                    pubsub.publish("event:crypto.locked");
                 }
             })
         ;
@@ -169,7 +171,7 @@ class Crypto {
     lock(self) {
         if(!self) self = this;
         self.credentialHolder = null;
-        //pubsub.publish("event:crypto.locked");
+        pubsub.publish("event:crypto.locked");
         console.debug("Crypto engine locked up.");
     }
 
