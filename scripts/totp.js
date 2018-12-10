@@ -1,3 +1,4 @@
+define(["pubsub"], function(pubsub){
 /*
 Keep tracks of a few TOTP codes internally, and manage the refresh jobs.
 The UI will call this class only, for listing all TOTP accounts, and actuell
@@ -68,4 +69,5 @@ function addTOTP(name, secret){
     ]);
 }
 
-module.exports.add = addTOTP;
+
+});

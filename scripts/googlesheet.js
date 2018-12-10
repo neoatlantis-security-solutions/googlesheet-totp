@@ -1,4 +1,4 @@
-define(['crypto'], function(Crypto){
+define(['pubsub', 'crypto'], function(pubsub, Crypto){
 /****************************************************************************/
 
 
@@ -48,44 +48,44 @@ class GoogleSheet {
         self.__metadata = JSON.parse(values[0][0]);
         console.debug("Retrieved current metadata", self.__metadata);
         await self.__initCrypto(self);
+        self.__sync(self);
     }
 
     async __initCrypto(self) {
         var currentUser = firebase.auth().currentUser;
-        var uuid = self.metadata("uuid"),
-            encryptedMainKey = self.metadata("encrypted-main-key"),
-            isDefaultMainKey = self.metadata("default-mainkey");
+        var cryptoDump = self.metadata("crypto"),
+            useDefaultPassword = self.metadata("use-default-password");
         if(!currentUser || !currentUser.uid) throw Error("not logged in");
 
-        if(encryptedMainKey && uuid){
-            console.debug("Found existing main key.");
-            self.crypto = new Crypto(uuid, encryptedMainKey);
-            if(isDefaultMainKey){
+        if(cryptoDump){
+            console.debug("Found existing crypto storage.");
+            self.crypto = new Crypto();
+            await self.crypto.load(cryptoDump);
+            if(useDefaultPassword){
                 // we are indicated the main key can be decrypted with
                 // default configuration - the uid from firebase
                 console.debug("Trying to unlock the crypto engine.");
-                return self.crypto.unlock(currentUser.uid);
+                return await self.crypto.unlock(currentUser.uid);
             } else {
                 // Let the crypto engine send a "cannot be unlocked"
                 // signal, so that other services will ask for user
                 // password.
-                return self.crypto.unlock();
+                return await self.crypto.unlock();
             }
             return; // done here
         }
         // if zero metadata, initialize with at least a main key
         // and a "default" indicator
         console.debug("Main key does not exist. Generate a new one.");
-        var uid = firebase.auth().currentUser.uid,
+        var password = firebase.auth().currentUser.uid,
             uuid = self.sheetID;
 
-        self.crypto = new Crypto(uuid);
+        self.crypto = new Crypto();
         console.debug("New main key will be generated.");
-        var encryptedMainKey = await self.crypto.generate(uid);
-        console.debug("Saving main key.");
-        self.metadata("encrypted-main-key", encryptedMainKey);
-        self.metadata("default-mainkey", true);
-        await self.metadata("uuid", uuid);
+        var cryptoDump = await self.crypto.generate(uuid, password);
+        console.debug("Saving crypto data.");
+        self.metadata("crypto", cryptoDump);
+        self.metadata("use-default-password", true);
     }
 
 
@@ -166,8 +166,8 @@ class GoogleSheet {
             var values = result.values || [[]];
             self.__items = values;
             console.debug("New dataset obtained from server.", values);
-            pubsub.publish("event:googlesheet.refreshed");
             self.__synced = true;
+            pubsub.publish("event:googlesheet.refreshed");
         }).then(next).catch(next);
     }
 
@@ -182,12 +182,23 @@ class GoogleSheet {
     }
 
 
-    item(row, col, value) {
-        if(!this.crypto.unlocked) throw Error("Crypto engine not unlocked.");
+    async item(row, col, value) {
         if(value == undefined){
-            return this.crypto.decrypt(this.__items[row][col]);
+            if(0 == col){
+                // Column 0 not encrypted !
+                return this.__items[row][col];
+            } else {
+                if(!this.crypto.unlocked){
+                    throw Error("Crypto engine not unlocked. Cannot read.");
+                }
+                return (await this.crypto.decrypt(this.__items[row][col]));
+            }
         } else {
-            this.__items[row][col] = this.crypto.encrypt(value);
+            if(0 == col){
+                this.__items[row][col] = await this.crypto.encrypt(value);
+            } else {
+                this.__items[row][col] = value;
+            }
             this.__needUpload = true;
             this.__synced = false;
             return this;

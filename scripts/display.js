@@ -1,4 +1,14 @@
-require(["googlesheet"], function(getGoogleSheet){
+require([
+    "pubsub",
+    "googlesheet",
+    "ui.table",
+
+    "ui.dialog.decrypt-in-progress"
+], function(
+    pubsub,
+    getGoogleSheet,
+    table
+){
 /****************************************************************************/
 
 function logout(){
@@ -17,7 +27,18 @@ if(!token || !sheetURL){
     return logout();
 }
 
+function onGooglesheetRefreshed(googlesheet, updater){
+    var count = sheet.database.count;
+    var itemID, itemRow, itemName, itemGenerator;
+    for(var itemRow=0; itemRow<count; itemRow++){
+
+    };
+}
+
+
+
 async function main(){
+    
     console.log("JS start.");
     try{
         var googlesheet = await getGoogleSheet(token, sheetURL);
@@ -27,7 +48,10 @@ async function main(){
         return logout();
     }
 
-
+    var updateTable = table("#displayTable");
+    pubsub.subscribe("event:googlesheet.refreshed", function(){
+        onGooglesheetRefreshed(googlesheet, updateTabler);
+    });
 };
 
 

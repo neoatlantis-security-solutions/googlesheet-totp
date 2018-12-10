@@ -2,8 +2,8 @@ define([], function(){
 
     return {
         subscribe: function(topic, callback, once){
-            function wrappedCallback(eventObject){
-                callback(eventObject.data);
+            function wrappedCallback(eventObject, data){
+                callback(data ? data.payload : undefined);
             }
             if(Boolean(once)){
                 $(window).one(topic, wrappedCallback);
@@ -13,7 +13,7 @@ define([], function(){
         },
 
         publish: function(topic, data){
-            $(window).trigger(topic, data);
+            $(window).trigger(topic, { payload: data});
         }
 
     }

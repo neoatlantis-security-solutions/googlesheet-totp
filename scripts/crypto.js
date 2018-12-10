@@ -1,56 +1,30 @@
 define([
     'pubsub',
     'firebase',
-    'nacl',
+    'openpgp.min',
     'ext/scrypt'
 ], function(
     pubsub,
     firebase,
-    nacl,
+    openpgp,
     scryptlib
 ){
 /****************************************************************************/
 
-
 var scryptlib = require("ext/scrypt");
 
-function concatUint8Array(a, b){
-    var ret = new Uint8Array(a.length + b.length);
-    ret.set(a);
-    ret.set(b, a.length);
-    return ret;
-}
-
-function encrypt(key, data){
-    // both arguments must be Uint8Array
-    var nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
-    var ciphertext = nacl.secretbox(data, nonce, key);
-    return nacl.util.encodeBase64(concatUint8Array(nonce, ciphertext));
-}
-
-function decrypt(key, data){
-    // key -> Uint8Array, data -> Base64 string 
-    try{
-        var data = nacl.util.decodeBase64(data);
-        var nonce = data.slice(0, nacl.secretbox.nonceLength),
-            data = data.slice(nonce.length);
-        return nacl.secretbox.open(data, nonce, key);
-    } catch(e){
-        console.error(e);
-        return null;
-    }
-}
 
 function scrypt(password, salt, progressCallback){
     return new Promise(function(resolve, reject){
-        var N = 65536, r = 8, p = 1, dkLen = 32;
+        var N = 16384, r = 8, p = 1, dkLen = 32;
+        console.log("KDF start...this may take a while.");
         scryptlib(password, salt, N, r, p, dkLen, function(e, prog, key){
             if(e){
                 console.debug("KDF failed.");
                 reject(e);
             } else if(key){
                 console.debug("KDF done.");
-                resolve(new Uint8Array(key));
+                resolve(openpgp.util.Uint8Array_to_b64(new Uint8Array(key)));
             } else {
                 progressCallback(prog);
             }
@@ -58,10 +32,10 @@ function scrypt(password, salt, progressCallback){
     });
 }
 
-function deriveKeyFromPassword(sheetID, password){
+function deriveKeyFromPassword(salt, password){
     // both inputs are ASCII strings
-    var salt = nacl.util.decodeUTF8(sheetID),
-        password = nacl.util.decodeUTF8(password);
+    var salt = openpgp.util.encode_utf8(salt),
+        password = openpgp.util.encode_utf8(password);
 
     pubsub.publish("event:crypto.kdf.progress", 0);
     return scrypt(password, salt, function(p){
@@ -69,106 +43,95 @@ function deriveKeyFromPassword(sheetID, password){
     });
 }
 
-function encloseCredentials(mainKey, password){
-    var ret = {};
-    var failedAttempts = 0;
-    ret.encryptMainKey = function(p){ return encrypt(p, mainKey); }
-    ret.setNewPassword = function(p){
-        ret.verifyPassword = function(x){
-            var result = (p == x);
-            if(!result){
-                failedAttempts += 1;
-                if(failedAttempts >= 3){
-                    mainKey = null;
-                    pubsub.publish("command:crypto.lock");
-                }
-            } else {
-                failedAttempts = 0;
-            }
-            return result;
-        }
-    }
-    ret.setNewPassword(password);
-    ret.encrypt = function(data){ return encrypt(mainKey, data); }
-    ret.decrypt = function(data){ return decrypt(mainKey, data); }
-    return ret;
-}
-
-
 class Crypto {
 
-    constructor (sheetID, loadExistingMainKey) {
-        var self = this;
-        this.sheetID = sheetID;
-        this.encryptedMainKey = loadExistingMainKey;
+    constructor (load) {
     }
 
-    generate (password) {
-        var self = this;
-        return deriveKeyFromPassword(this.sheetID, password)
-            .then(function(key){
-                var randomPlainMainKey = nacl.randomBytes(32);
-                self.encryptedMainKey = encrypt(key, randomPlainMainKey);
-                self.credentialHolder = encloseCredentials(
-                    randomPlainMainKey, password);
-                console.debug("Crypto engine unlocked.");
-                return self.encryptedMainKey;
-            })
-        ;
+    canEncrypt (){
+        return Boolean(this.publicKey != undefined);
     }
 
-    reencrypt (oldPassword, newPassword){
-        /* Generate another storagable credential that protects the random
-        plain main key in another user password. Used for setting user's
-        personal password instead of default. Returns a Promise.
-          
-          DO NOT call this method from UI, use methods in `googlesheet.js`
-          instead, which take cares of sync to server.
-        */
+    canDecrypt (){
+        return Boolean(this.privateKey != undefined);  // TODO and decrypted 
+    }
+
+    async generate (uuid, password) {
         var self = this;
-        return new Promise(function(resolve, reject){
-            if(!self.credentialHolder) return reject("Crypto not unlocked.");
-            if(!self.credentialHolder.verifyPassword(oldPassword))
-                return reject("Old password incorrect.");
-        }).then(function(){
-            return deriveKeyFromPassword(this.sheetID, password);
-        }).then(function(key){
-            var encryptedMainKey = self.credentialHolder.encryptMainKey(key);
-            self.credentialHolder.setNewPassword(newPassword);
-            self.encryptedMainKey = encryptedMainKey;
-            return encryptedMainKey;
+        var key = await deriveKeyFromPassword(uuid, password);
+        var pgpKeypair = await openpgp.generateKey({
+            userIds: [{ name: this.uuid }],
+            curve: "ed25519",
+            passphrase: key,
         });
+
+        this.uuid = uuid;
+        this.publicKey =
+            (await openpgp.key.readArmored(pgpKeypair.publicKeyArmored)).keys[0];
+        this.privateKey =
+            (await openpgp.key.readArmored(pgpKeypair.privateKeyArmored)).keys[0];
+        pubsub.publish("event:crypto.unlocked");
+        return self.dump();
     }
 
-    unlock (password) {
+    dump (){
+        return {
+            "uuid": this.uuid,
+            "public": this.publicKey.armor(),
+            "private": this.privateKey.armor(),
+        };
+    }
+
+    async load(data){
+        this.uuid = data.uuid;
+        this.publicKey = (await openpgp.key.readArmored(data["public"])).keys[0];
+        this.privateKey = (await openpgp.key.readArmored(data["private"])).keys[0];
+        if(this.privateKey.isDecrypted()){
+            console.warn("WARNING: private key is decrypted. No password?");
+        }
+        console.log("Loaded public and private key.");
+        return;
+    }
+
+    async changePassword (newPassword) {
+        if(!this.canDecrypt() || !this.uuid){
+            throw Error("Must unlock crypto engine before changing password.");
+        }
+        var passphrase = await deriveKeyFromPassword(this.uuid, newPassword);
+        var result = await this.privateKey.encrypt(passphrase);
+        console.log(result);
+    }
+
+    async unlock (password) {
+        console.log("Attempt to unlock crypto engine.");
         var self = this;
-        if(this.credentialHolder) return;
-        if(!this.encryptedMainKey){
+        if(!this.privateKey || !this.uuid){
             throw Error("Crypto not initialized with a main key.");
+        }
+        if(this.privateKey.isDecrypted()){
+            console.log("Private key already decrypted.");
+            return;
         }
         if(!password){
             // If password not supplied, fails automatically without trying
             // to derive any key. Used to inform other services asking for
             // user password input.
+            console.log("No password available. User input might required.");
             pubsub.publish("event:crypto.locked");
             return;
         }
-        return deriveKeyFromPassword(this.sheetID, password)
-            .then(function(key){
-                var plainMainKey = decrypt(key, self.encryptedMainKey);
-                if(plainMainKey){
-                    self.credentialHolder = encloseCredentials(
-                        plainMainKey, password);
-                    pubsub.publish("event:crypto.unlocked");
-                    console.debug("Crypto engine unlocked.");
-                } else {
-                    pubsub.publish("event:crypto.locked");
-                }
-            })
-        ;
+        var key = await deriveKeyFromPassword(this.uuid, password);
+        try{
+            await this.privateKey.decrypt(key);
+            pubsub.publish("event:crypto.unlocked");
+            console.debug("Crypto engine unlocked.");
+        }catch(e){
+            console.error(e);
+            pubsub.publish("event:crypto.locked");
+        }
     }
 
-    lock(self) {
+    lock (self) {
         if(!self) self = this;
         self.credentialHolder = null;
         pubsub.publish("event:crypto.locked");
@@ -179,21 +142,24 @@ class Crypto {
         return Boolean(this.credentialHolder);
     }
 
-    encrypt(string) {
-        // encrypt any UTF8-plaintext into Base64-ciphertext
-        if(!this.credentialHolder) throw Error("Crypto engine not unlocked.");
-        var data = nacl.util.decodeUTF8(string);
-        return this.credentialHolder.encrypt(data);
+    async encrypt (string) {
+        if(!this.canEncrypt()){
+            throw Error("Not ready for encryption.");
+        }
+        return (await openpgp.encrypt({
+            message: openpgp.message.fromText(string),
+            publicKeys: [this.publicKey],
+        })).data;
     }
 
-    decrypt(string) {
-        // decrypt any Base64-ciphertext to UTF8-plaintext
-        if(!this.credentialHolder) throw Error("Crypto engine not unlocked.");
-        try{
-            return nacl.util.encodeUTF8(this.credentialHolder.decrypt(string));
-        } catch(e){
-            return null;
+    async decrypt(string) {
+        if(!this.canDecrypt()){
+            throw Error("Not ready for decryption.");
         }
+        return (await openpgp.decrypt({
+            message: await openpgp.message.readArmored(string),
+            privateKeys: [this.privateKey],
+        })).data;
     }
 
 }
